@@ -1,42 +1,53 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Patch, Delete, UseGuards, Query } from '@nestjs/common';
 import { AuctionsService } from './auctions.service';
 import { CreateAuctionDto } from './dto/create-auction.dto';
+import { UpdateAuctionDto } from './dto/update-auction.dto';
+import { QueryAuctionDto } from './dto/query-auction.dto';
 import { Auction } from './auction.entity';
-
-/**
- * Default creator ID used for demo/seed purposes (no auth in this build).
- * In a real app, this would come from @Req() user or a JWT guard.
- */
-const DEMO_USER_ID = '00000000-0000-0000-0000-000000000001';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { User } from '../users/user.entity';
+import { RolesGuard } from '../common/guards/roles.guard';
 
 @Controller('auctions')
 export class AuctionsController {
   constructor(private readonly auctionsService: AuctionsService) {}
 
-  /** POST /auctions — create a new auction */
+  @UseGuards(JwtAuthGuard)
   @Post()
-  async create(@Body() createAuctionDto: CreateAuctionDto): Promise<Auction> {
-    return this.auctionsService.create(createAuctionDto, DEMO_USER_ID);
+  async create(
+    @Body() createAuctionDto: CreateAuctionDto,
+    @CurrentUser() user: User,
+  ): Promise<Auction> {
+    return this.auctionsService.create(createAuctionDto, user.id);
   }
 
-  /**
-   * POST /auctions/seed — seed demo users and a sample auction.
-   * Only useful in development; remove or guard with an env check in production.
-   */
-  @Post('seed')
-  async seed(): Promise<Auction> {
-    return this.auctionsService.seedDemo();
-  }
-
-  /** GET /auctions — list all auctions */
   @Get()
-  async findAll(): Promise<Auction[]> {
-    return this.auctionsService.findAll();
+  async findAll(@Query() query: QueryAuctionDto) {
+    return this.auctionsService.findAll(query);
   }
 
-  /** GET /auctions/:id — get a single auction with bids */
   @Get(':id')
   async findOne(@Param('id') id: string): Promise<Auction> {
     return this.auctionsService.findOne(id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id')
+  async update(
+    @Param('id') id: string,
+    @Body() updateDto: UpdateAuctionDto,
+    @CurrentUser() user: User,
+  ): Promise<Auction> {
+    return this.auctionsService.update(id, updateDto, user.id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Delete(':id')
+  async remove(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+  ): Promise<void> {
+    return this.auctionsService.remove(id, user.id, user.role);
   }
 }

@@ -1,431 +1,418 @@
-'use client';
+"use client";
 
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useState, useEffect, useRef } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
+import { api } from '@/lib/api';
+import { socketManager } from '@/lib/socket';
+import Navbar from '@/components/Navbar';
+import { formatDistanceToNow } from 'date-fns';
+import { Clock, Tag, ArrowLeft, Heart, ShieldCheck, MapPin, Package, Star } from 'lucide-react';
+import clsx from 'clsx';
 import Link from 'next/link';
-import { io, Socket } from 'socket.io-client';
 
-// ─── Types ────────────────────────────────────────────────
-interface BidUser {
-  id:   string;
-  name: string;
-}
-
-interface Bid {
-  id:        string;
-  amount:    number;
-  bidder:    BidUser;
-  createdAt: string;
-}
-
-interface Auction {
-  id:            string;
-  title:         string;
-  description:   string;
-  currentPrice:  number;
-  startingPrice: number;
-  status:        string;
-  endTime:       string;
-  winnerId?:     string;
-  bids:          Bid[];
-  creator?:      BidUser;
-}
-
-interface ToastState {
-  message: string;
-  type:    'success' | 'error' | 'info';
-}
-
-// Dummy user for demonstration (no auth in this build)
-const DUMMY_BIDDER_ID   = '00000000-0000-0000-0000-000000000002';
-const DUMMY_BIDDER_NAME = 'Test User 2 (Bidder)';
-
-// ─── Sub-components ───────────────────────────────────────
-
-function StatusBadge({ status }: { status: string }) {
-  const cls =
-    status === 'active' ? 'badge badge-active' :
-    status === 'sold'   ? 'badge badge-sold'   :
-                          'badge badge-cancelled';
-  const label =
-    status === 'active' ? '🟢 Live' :
-    status === 'sold'   ? '🔵 Sold' : '🔴 Ended';
-  return <span className={cls}>{label}</span>;
-}
-
-function CountdownTimer({ endTime, status }: { endTime: string; status: string }) {
-  const [ms, setMs] = useState(() => Math.max(0, new Date(endTime).getTime() - Date.now()));
+export default function AuctionDetails() {
+  const params = useParams();
+  const id = params.id as string;
+  const router = useRouter();
+  const { user } = useAuth();
+  
+  const [auction, setAuction] = useState<any>(null);
+  const [bids, setBids] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [bidAmount, setBidAmount] = useState('');
+  const [bidLoading, setBidLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [timeLeft, setTimeLeft] = useState<string>('');
+  const [isWatchlisted, setIsWatchlisted] = useState(false);
+  
+  const timerRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   useEffect(() => {
-    if (status !== 'active') return;
-    const t = setInterval(() => setMs(Math.max(0, new Date(endTime).getTime() - Date.now())), 500);
-    return () => clearInterval(t);
-  }, [endTime, status]);
-
-  if (status !== 'active') return null;
-
-  const h = Math.floor(ms / 3_600_000);
-  const m = Math.floor((ms % 3_600_000) / 60_000);
-  const s = Math.floor((ms % 60_000) / 1_000);
-  const urgent = ms < 60_000 && ms > 0;
-  const finished = ms === 0;
-
-  return (
-    <div className={`timer text-2xl font-bold ${urgent ? 'timer-urgent' : 'text-white'}`}>
-      {finished ? (
-        <span className="text-gray-400 text-lg">Closing…</span>
-      ) : h > 0 ? (
-        `${h}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`
-      ) : (
-        `${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`
-      )}
-    </div>
-  );
-}
-
-function BidRow({ bid, rank, isOwn }: { bid: Bid; rank: number; isOwn: boolean }) {
-  const date = new Date(bid.createdAt);
-  const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  return (
-    <div className={`bid-row ${rank === 1 ? 'bid-top' : ''} animate-fade-in`}>
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
-             style={{
-               background: rank === 1
-                 ? 'linear-gradient(135deg, #fab005, #fcc419)'
-                 : 'rgba(255,255,255,0.08)',
-               color: rank === 1 ? '#1a1800' : '#adb5bd',
-             }}>
-          #{rank}
-        </div>
-        <div>
-          <div className="text-sm font-semibold text-white">
-            {isOwn ? '⭐ You' : (bid.bidder?.name ?? 'Anonymous')}
-          </div>
-          <div className="text-xs text-gray-500">{timeStr}</div>
-        </div>
-      </div>
-      <div className="text-right">
-        <div className="price-display text-lg">${Number(bid.amount).toFixed(2)}</div>
-      </div>
-    </div>
-  );
-}
-
-function Toast({ toast }: { toast: ToastState }) {
-  const cls =
-    toast.type === 'success' ? 'toast toast-success' :
-    toast.type === 'error'   ? 'toast toast-error'   :
-                               'toast toast-info';
-  const icon =
-    toast.type === 'success' ? '✅' :
-    toast.type === 'error'   ? '❌' : 'ℹ️';
-  return <div className={cls}>{icon} {toast.message}</div>;
-}
-
-// ─── Main Component ───────────────────────────────────────
-export default function AuctionDetailPage() {
-  const params               = useParams();
-  const id                   = params.id as string;
-  const socketRef            = useRef<Socket | null>(null);
-
-  const [auction,   setAuction]   = useState<Auction | null>(null);
-  const [bidAmount, setBidAmount] = useState<number>(0);
-  const [loading,   setLoading]   = useState(true);
-  const [bidding,   setBidding]   = useState(false);
-  const [error,     setError]     = useState('');
-  const [toast,     setToast]     = useState<ToastState | null>(null);
-
-  const showToast = useCallback((message: string, type: ToastState['type']) => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 4000);
-  }, []);
-
-  // Fetch auction data
-  useEffect(() => {
-    if (!id) return;
-    setLoading(true);
-    fetch(`http://localhost:3001/auctions/${id}`)
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data: Auction) => {
-        setAuction(data);
-        setBidAmount(Number(data.currentPrice) + 10);
+    const fetchAuction = async () => {
+      try {
+        const [auctionRes, bidsRes] = await Promise.all([
+          api.get(`/auctions/${id}`),
+          api.get(`/bids/auction/${id}`)
+        ]);
+        
+        setAuction(auctionRes.data);
+        setBids(bidsRes.data.data);
+        
+        if (user) {
+          try {
+            const watchRes = await api.get('/watchlist');
+            const inWatchlist = watchRes.data.data.some((a: any) => a.id === id);
+            setIsWatchlisted(inWatchlist);
+          } catch (e) {}
+        }
+      } catch (err) {
+        console.error('Failed to load auction', err);
+      } finally {
         setLoading(false);
-      })
-      .catch(err => {
-        setError(err.message);
-        setLoading(false);
-      });
-  }, [id]);
-
-  // Socket.IO
-  useEffect(() => {
-    if (!id) return;
-
-    const socket = io('http://localhost:3001', { transports: ['websocket', 'polling'] });
-    socketRef.current = socket;
-
-    socket.on('connect', () => {
-      socket.emit('joinAuction', id);
-    });
-
-    socket.on('bidPlaced', (updatedAuction: Auction) => {
-      setAuction(updatedAuction);
-      const newPrice = Number(updatedAuction.currentPrice);
-      setBidAmount(newPrice + 10);
-      setBidding(false);
-
-      // Sort bids descending by amount to find top bidder
-      const sorted   = [...(updatedAuction.bids ?? [])].sort((a, b) => Number(b.amount) - Number(a.amount));
-      const topBidder = sorted[0]?.bidder?.id;
-      if (topBidder === DUMMY_BIDDER_ID) {
-        showToast('Your bid is now the highest! 🎉', 'success');
-      } else {
-        showToast(`A new highest bid of $${newPrice.toFixed(2)} was placed!`, 'info');
       }
-    });
+    };
+    
+    fetchAuction();
+  }, [id, user]);
 
-    socket.on('auctionEnded', (endedAuction: Auction) => {
+  // Setup sockets
+  useEffect(() => {
+    if (!id) return;
+    
+    const socket = socketManager.getAuctionsSocket();
+    socket.emit('joinAuction', id);
+
+    const handleBidPlaced = (updatedAuction: any) => {
+      setAuction(updatedAuction);
+      setError(''); // Fix #14 clear error
+      setBidLoading(false); // Fix #16 stop loading
+      
+      // We don't have the new bid object in updatedAuction easily accessible for the list
+      // A full app might emit the bid object. Let's re-fetch bids to be safe
+      api.get(`/bids/auction/${id}`).then(res => setBids(res.data.data));
+    };
+
+    const handleAuctionEnded = (endedAuction: any) => {
       setAuction(endedAuction);
-      setBidding(false);
-      const won = endedAuction.winnerId === DUMMY_BIDDER_ID;
-      showToast(won ? '🏆 You won this auction!' : 'This auction has ended.', won ? 'success' : 'info');
-    });
+      api.get(`/bids/auction/${id}`).then(res => setBids(res.data.data));
+    };
 
-    socket.on('bidError', (data: { message: string }) => {
+    const handleBidError = (data: { message: string }) => {
       setError(data.message);
-      setBidding(false);
-      showToast(data.message, 'error');
-    });
+      setBidLoading(false);
+    };
+
+    socket.on('bidPlaced', handleBidPlaced);
+    socket.on('auctionEnded', handleAuctionEnded);
+    socket.on('bidError', handleBidError);
 
     return () => {
-      socket.disconnect();
-      socketRef.current = null;
+      socket.off('bidPlaced', handleBidPlaced);
+      socket.off('auctionEnded', handleAuctionEnded);
+      socket.off('bidError', handleBidError);
+      socket.emit('leaveAuction', id);
     };
-  }, [id, showToast]);
+  }, [id]);
 
-  const handleBid = () => {
-    if (!auction || bidding) return;
-    const min = Number(auction.currentPrice) + 0.01;
-    if (bidAmount < min) {
-      setError(`Bid must be greater than $${Number(auction.currentPrice).toFixed(2)}`);
+  // Countdown timer
+  useEffect(() => {
+    if (!auction) return;
+    
+    const updateTime = () => {
+      const end = new Date(auction.endTime).getTime();
+      const now = new Date().getTime();
+      const distance = end - now;
+
+      if (distance < 0) {
+        setTimeLeft('Ended');
+        if (timerRef.current) clearInterval(timerRef.current);
+        return;
+      }
+
+      const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+      if (days > 0) setTimeLeft(`${days}d ${hours}h ${minutes}m`);
+      else if (hours > 0) setTimeLeft(`${hours}h ${minutes}m ${seconds}s`);
+      else setTimeLeft(`${minutes}m ${seconds}s`);
+    };
+
+    updateTime();
+    // Fix #20 clear existing interval
+    if (timerRef.current) clearInterval(timerRef.current);
+    // Fix #1 recreate timer when auction updates (end time changes)
+    timerRef.current = setInterval(updateTime, 1000);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [auction]); // Dependency on auction fixes bug #1 (timer resetting properly on new bid)
+
+  const handlePlaceBid = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) {
+      router.push('/login');
       return;
     }
+    
     setError('');
-    setBidding(true);
-    socketRef.current?.emit('placeBid', {
-      auctionId: id,
-      bidderId:  DUMMY_BIDDER_ID,
-      amount:    bidAmount,
-    });
+    setBidLoading(true);
+    const socket = socketManager.getAuctionsSocket();
+    socket.emit('placeBid', { auctionId: id, amount: Number(bidAmount) });
   };
 
-  // ─── Loading state ──────────────────────────────────────
+  const toggleWatchlist = async () => {
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+    try {
+      if (isWatchlisted) {
+        await api.delete(`/watchlist/${id}`);
+      } else {
+        await api.post(`/watchlist/${id}`);
+      }
+      setIsWatchlisted(!isWatchlisted);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   if (loading) {
     return (
-      <div className="max-w-5xl mx-auto px-6 py-10 animate-fade-in">
-        <div className="skeleton h-8 w-32 mb-8 rounded-lg" />
-        <div className="glass-card p-8">
-          <div className="skeleton h-9 w-2/3 mb-4" />
-          <div className="skeleton h-4 w-full mb-2" />
-          <div className="skeleton h-4 w-4/5 mb-8" />
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            {[0,1,2].map(i => <div key={i} className="skeleton h-20 rounded-xl" />)}
-          </div>
-          <div className="skeleton h-14 w-full rounded-xl" />
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <Navbar />
+        <div className="flex-grow flex justify-center items-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
         </div>
       </div>
     );
   }
 
-  // ─── Error state ────────────────────────────────────────
-  if (error && !auction) {
+  if (!auction) {
     return (
-      <div className="max-w-5xl mx-auto px-6 py-10 text-center">
-        <div className="text-6xl mb-4">⚠️</div>
-        <h1 className="text-2xl font-bold text-white mb-2">Failed to load auction</h1>
-        <p className="text-gray-400 mb-6">{error}</p>
-        <Link href="/" className="btn-primary">← Back to Auctions</Link>
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <Navbar />
+        <div className="flex-grow flex flex-col justify-center items-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Auction not found</h2>
+          <button onClick={() => router.back()} className="text-indigo-600 hover:underline">Go back</button>
+        </div>
       </div>
     );
   }
 
-  if (!auction) return null;
-
-  const sortedBids = [...(auction.bids ?? [])].sort((a, b) => Number(b.amount) - Number(a.amount));
-  const winner     = auction.winnerId
-    ? auction.bids.find(b => b.bidder?.id === auction.winnerId)?.bidder?.name ?? 'Unknown'
-    : null;
-  const isEnded    = auction.status !== 'active';
-  const currentMin = Number(auction.currentPrice) + 0.01;
+  const isSeller = user?.id === auction.creator.id;
+  const isWinner = user?.id === auction.winnerId;
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-10 animate-fade-in">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <Navbar />
+      
+      <main className="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
+        <button onClick={() => router.back()} className="flex items-center text-gray-500 hover:text-indigo-600 mb-6 transition-colors">
+          <ArrowLeft className="w-4 h-4 mr-1" /> Back
+        </button>
 
-      {/* Back link */}
-      <Link href="/" className="inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors mb-8 text-sm font-medium">
-        ← Back to Auctions
-      </Link>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-
-        {/* Left: Auction info */}
-        <div className="lg:col-span-2 flex flex-col gap-6">
-          <div className="glass-card p-8">
-            <div className="flex items-start justify-between gap-4 mb-4">
-              <h1 className="text-3xl font-extrabold text-white leading-tight" style={{ letterSpacing: '-0.5px' }}>
-                {auction.title}
-              </h1>
-              <StatusBadge status={auction.status} />
-            </div>
-
-            {auction.creator && (
-              <p className="text-sm text-gray-500 mb-4">Listed by <span className="text-gray-300">{auction.creator.name}</span></p>
-            )}
-
-            <p className="text-gray-300 leading-relaxed mb-6">{auction.description}</p>
-
-            <hr className="divider" />
-
-            {/* Stats */}
-            <div className="grid grid-cols-3 gap-4">
-              <div className="stat-box">
-                <div className="text-xs text-gray-500 mb-2 uppercase tracking-wide">Starting Price</div>
-                <div className="font-mono font-bold text-gray-300 text-lg">${Number(auction.startingPrice).toFixed(2)}</div>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="grid grid-cols-1 lg:grid-cols-2">
+            
+            {/* Left Col: Image & Details */}
+            <div className="p-8 lg:border-r border-gray-200 flex flex-col">
+              <div className="aspect-square bg-gray-100 rounded-xl overflow-hidden mb-6 relative">
+                {auction.images && auction.images.length > 0 ? (
+                  <img src={auction.images[0]} alt={auction.title} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-gray-400">No Image provided</div>
+                )}
+                
+                <button 
+                  onClick={toggleWatchlist}
+                  className="absolute top-4 right-4 p-3 bg-white/90 backdrop-blur-sm rounded-full shadow-sm hover:scale-110 transition-transform"
+                >
+                  <Heart className={clsx("w-6 h-6 transition-colors", isWatchlisted ? "fill-red-500 text-red-500" : "text-gray-400")} />
+                </button>
               </div>
-              <div className="stat-box">
-                <div className="text-xs text-gray-500 mb-2 uppercase tracking-wide">Current Price</div>
-                <div className="price-display text-xl">${Number(auction.currentPrice).toFixed(2)}</div>
-              </div>
-              <div className="stat-box">
-                <div className="text-xs text-gray-500 mb-2 uppercase tracking-wide">Total Bids</div>
-                <div className="text-xl font-bold text-white">{auction.bids?.length ?? 0}</div>
-              </div>
-            </div>
 
-            {/* Winner announcement */}
-            {auction.status === 'sold' && winner && (
-              <div className="mt-6 p-5 rounded-xl flex items-center gap-4"
-                   style={{ background: 'rgba(250,176,5,0.1)', border: '1px solid rgba(250,176,5,0.3)' }}>
-                <span className="text-4xl">🏆</span>
-                <div>
-                  <div className="font-bold text-yellow-400 text-lg">Auction Won!</div>
-                  <div className="text-gray-300 text-sm">Winner: <strong>{winner}</strong></div>
-                  <div className="text-gray-400 text-sm">
-                    Final Price: <strong className="price-display">${Number(auction.currentPrice).toFixed(2)}</strong>
+              <div className="mt-auto">
+                <h3 className="font-semibold text-lg border-b pb-2 mb-4">Description</h3>
+                <p className="text-gray-600 whitespace-pre-wrap leading-relaxed">{auction.description}</p>
+                
+                <div className="mt-8 grid grid-cols-2 gap-4">
+                  <div className="flex items-start">
+                    <MapPin className="w-5 h-5 text-gray-400 mr-2 mt-0.5" />
+                    <div>
+                      <p className="text-xs text-gray-500">Location</p>
+                      <p className="text-sm font-medium">{auction.location || 'Not specified'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start">
+                    <Package className="w-5 h-5 text-gray-400 mr-2 mt-0.5" />
+                    <div>
+                      <p className="text-xs text-gray-500">Shipping</p>
+                      <p className="text-sm font-medium">{auction.shippingInfo || 'Not specified'}</p>
+                    </div>
                   </div>
                 </div>
               </div>
-            )}
-
-            {auction.status !== 'active' && !winner && (
-              <div className="mt-6 p-5 rounded-xl text-center text-gray-400"
-                   style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                This auction ended with no bids.
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right: Bidding panel */}
-        <div className="flex flex-col gap-6">
-          {/* Timer */}
-          <div className="glass-card p-6 text-center">
-            <div className="text-xs text-gray-500 uppercase tracking-widest mb-3">Time Remaining</div>
-            <CountdownTimer endTime={auction.endTime} status={auction.status} />
-            {auction.status !== 'active' && (
-              <div className="text-gray-400 font-medium">Auction Ended</div>
-            )}
-            <div className="text-xs text-gray-600 mt-2">
-              {new Date(auction.endTime).toLocaleString()}
             </div>
-          </div>
 
-          {/* Bid input */}
-          {!isEnded && (
-            <div className="glass-card p-6">
-              <div className="text-xs text-gray-500 uppercase tracking-widest mb-4">Place Your Bid</div>
-
-              <div className="relative mb-4">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-lg">$</span>
-                <input
-                  type="number"
-                  value={bidAmount}
-                  min={currentMin}
-                  step={0.01}
-                  onChange={e => { setBidAmount(Number(e.target.value)); setError(''); }}
-                  className="input-field pl-9 text-xl font-bold font-mono"
-                  style={{ paddingLeft: '2.5rem' }}
-                />
+            {/* Right Col: Bidding & Seller info */}
+            <div className="p-8 flex flex-col bg-gray-50/50">
+              <div className="flex justify-between items-start mb-2">
+                <div className="flex gap-2">
+                  <span className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-xs font-medium uppercase tracking-wide">
+                    {auction.category?.name || 'Category'}
+                  </span>
+                  <span className="px-3 py-1 bg-gray-200 text-gray-800 rounded-full text-xs font-medium uppercase tracking-wide">
+                    {auction.condition?.replace('_', ' ')}
+                  </span>
+                </div>
+                <div className="flex items-center text-gray-500 text-sm">
+                  <Tag className="w-4 h-4 mr-1" /> ID: {auction.id.slice(0,8)}
+                </div>
               </div>
 
-              {error && (
-                <div className="mb-4 p-3 rounded-lg text-sm text-red-400 flex items-center gap-2"
-                     style={{ background: 'rgba(250,82,82,0.1)', border: '1px solid rgba(250,82,82,0.25)' }}>
-                  ⚠️ {error}
+              <h1 className="text-3xl font-bold text-gray-900 mt-2 mb-6 leading-tight">{auction.title}</h1>
+
+              {/* Status Banner */}
+              <div className={clsx(
+                "rounded-xl p-6 mb-8 flex items-center justify-between border shadow-sm",
+                auction.status === 'active' ? "bg-white border-indigo-100" :
+                auction.status === 'sold' ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
+              )}>
+                <div>
+                  <p className="text-sm text-gray-500 font-medium mb-1">
+                    {auction.status === 'active' ? 'Current Bid' : 
+                     auction.status === 'sold' ? 'Sold For' : 'Starting Price'}
+                  </p>
+                  <p className="text-4xl font-bold text-gray-900">
+                    ${Number(auction.currentPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-gray-500 font-medium mb-1 flex items-center justify-end">
+                    <Clock className="w-4 h-4 mr-1" /> 
+                    {auction.status === 'active' ? 'Time Left' : 'Status'}
+                  </p>
+                  <p className={clsx(
+                    "text-xl font-bold",
+                    auction.status === 'active' ? "text-indigo-600" :
+                    auction.status === 'sold' ? "text-green-600" : "text-red-600"
+                  )}>
+                    {auction.status === 'active' ? timeLeft : auction.status.toUpperCase()}
+                  </p>
+                </div>
+              </div>
+
+              {/* Bidding Area */}
+              {auction.status === 'active' && (
+                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm mb-8">
+                  {isSeller ? (
+                    <div className="text-center py-4 text-gray-500">
+                      You are the seller of this item. You cannot bid.
+                    </div>
+                  ) : (
+                    <form onSubmit={handlePlaceBid}>
+                      {error && (
+                        <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 p-3 rounded-md">
+                          {error}
+                        </div>
+                      )}
+                      <div className="flex gap-4">
+                        <div className="relative flex-grow">
+                          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                            <span className="text-gray-500 font-medium">$</span>
+                          </div>
+                          <input
+                            type="number"
+                            min={(Number(auction.currentPrice) + (Number(auction.currentPrice) === Number(auction.startingPrice) && bids.length === 0 ? 0 : Number(auction.minBidIncrement))).toFixed(2)}
+                            step="0.01"
+                            required
+                            value={bidAmount}
+                            onChange={(e) => setBidAmount(e.target.value)}
+                            className="block w-full pl-8 pr-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-0 focus:border-indigo-600 text-lg font-semibold transition-colors"
+                            placeholder="Enter amount"
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          disabled={bidLoading}
+                          className="bg-indigo-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"
+                        >
+                          {bidLoading ? 'Processing...' : 'Place Bid'}
+                        </button>
+                      </div>
+                      <p className="mt-3 text-xs text-gray-500 flex items-center">
+                        <ShieldCheck className="w-4 h-4 mr-1 text-green-500" />
+                        Enter ${(Number(auction.currentPrice) + (Number(auction.currentPrice) === Number(auction.startingPrice) && bids.length === 0 ? 0 : Number(auction.minBidIncrement))).toFixed(2)} or more. {auction.reservePrice && (auction.isReserveMet ? 'Reserve price met.' : 'Reserve price not met.')}
+                      </p>
+                    </form>
+                  )}
                 </div>
               )}
 
-              <button
-                onClick={handleBid}
-                disabled={bidding || bidAmount < currentMin}
-                className="btn-bid w-full"
-              >
-                {bidding ? (
-                  <>
-                    <span className="animate-spin inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full" />
-                    Placing Bid…
-                  </>
-                ) : (
-                  <>🔨 Place Bid</>
-                )}
-              </button>
+              {/* Result Area */}
+              {auction.status === 'sold' && isWinner && (
+                <div className="bg-green-100 border border-green-300 text-green-800 p-6 rounded-xl shadow-sm mb-8">
+                  <h3 className="font-bold text-lg mb-1 flex items-center">🎉 You won this auction!</h3>
+                  <p className="text-sm">Please arrange payment with the seller.</p>
+                </div>
+              )}
+              {auction.status === 'sold' && isSeller && (
+                <div className="bg-green-100 border border-green-300 text-green-800 p-6 rounded-xl shadow-sm mb-8">
+                  <h3 className="font-bold text-lg mb-1 flex items-center">🎉 Your item sold!</h3>
+                  <p className="text-sm">The winner will contact you for payment.</p>
+                </div>
+              )}
 
-              <p className="text-xs text-gray-500 text-center mt-3">
-                Min bid: <span className="text-gray-300 font-mono">${currentMin.toFixed(2)}</span>
-              </p>
-
-              <div className="mt-4 p-3 rounded-lg text-xs text-gray-500"
-                   style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                Bidding as: <span className="text-gray-300">{DUMMY_BIDDER_NAME}</span>
+              {/* Seller Info */}
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm mb-8 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <img 
+                    src={auction.creator.avatarUrl || `https://ui-avatars.com/api/?name=${auction.creator.name}`} 
+                    className="w-12 h-12 rounded-full border border-gray-200" 
+                    alt="Seller" 
+                  />
+                  <div>
+                    <p className="text-xs text-gray-500 font-medium">SELLER</p>
+                    <Link href={`/profile/${auction.creator.id}`} className="font-semibold text-gray-900 hover:text-indigo-600 transition-colors">
+                      {auction.creator.name}
+                    </Link>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="flex items-center text-yellow-500 mb-1">
+                    <Star className="w-4 h-4 fill-current mr-1" />
+                    <span className="font-bold">{auction.creator.sellerRating > 0 ? Number(auction.creator.sellerRating).toFixed(1) : 'New'}</span>
+                  </div>
+                  <p className="text-xs text-gray-500">{auction.creator.totalRatingsCount} reviews</p>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
-      </div>
 
-      {/* Bid History */}
-      {sortedBids.length > 0 && (
-        <div className="glass-card p-8 mt-8">
-          <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-            🔨 Bid History
-            <span className="ml-auto text-sm font-normal text-gray-500">{sortedBids.length} bids</span>
-          </h2>
-          <div className="flex flex-col gap-3">
-            {sortedBids.map((bid, i) => (
-              <BidRow
-                key={bid.id}
-                bid={bid}
-                rank={i + 1}
-                isOwn={bid.bidder?.id === DUMMY_BIDDER_ID}
-              />
-            ))}
+              {/* Bid History */}
+              <div className="flex-grow flex flex-col">
+                <h3 className="font-semibold text-lg mb-4 flex items-center justify-between">
+                  <span>Bid History</span>
+                  <span className="text-sm font-normal text-gray-500">{bids.length} bids</span>
+                </h3>
+                
+                <div className="bg-white rounded-xl border border-gray-200 shadow-inner overflow-hidden flex-grow relative min-h-[200px]">
+                  {bids.length === 0 ? (
+                    <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-sm">
+                      No bids yet. Be the first!
+                    </div>
+                  ) : (
+                    <ul className="divide-y divide-gray-100 max-h-64 overflow-y-auto">
+                      {bids.map((bid, i) => (
+                        <li key={bid.id} className={clsx("p-4 flex justify-between items-center", i === 0 && "bg-gray-50")}>
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-semibold text-xs">
+                              {bid.bidder?.name?.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">
+                                {bid.bidder?.id === user?.id ? 'You' : 
+                                 `${bid.bidder?.name?.slice(0,2)}***`} 
+                                {i === 0 && <span className="ml-2 text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">Leading</span>}
+                              </p>
+                              <p className="text-xs text-gray-500">{formatDistanceToNow(new Date(bid.createdAt), { addSuffix: true })}</p>
+                            </div>
+                          </div>
+                          <span className="font-bold text-gray-900">${Number(bid.amount).toFixed(2)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+
+            </div>
           </div>
         </div>
-      )}
-
-      {!sortedBids.length && !isEnded && (
-        <div className="glass-card p-8 mt-8 text-center">
-          <div className="text-4xl mb-3">🔇</div>
-          <p className="text-gray-400">No bids yet — be the first to bid!</p>
-        </div>
-      )}
-
-      {/* Toast */}
-      {toast && <Toast toast={toast} />}
+      </main>
     </div>
   );
 }

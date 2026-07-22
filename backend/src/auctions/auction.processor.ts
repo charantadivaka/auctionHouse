@@ -14,9 +14,10 @@ export class AuctionProcessor extends WorkerHost {
 
   async process(job: Job<any, any, string>): Promise<void> {
     if (job.name === 'endAuction') {
-      await this.auctionsService.endAuction(job.data.auctionId);
-      const endedAuction = await this.auctionsService.findOne(job.data.auctionId);
-      this.auctionsGateway.server.to(`auction-${job.data.auctionId}`).emit('auctionEnded', endedAuction);
+      const endedAuction = await this.auctionsService.endAuction(job.data.auctionId);
+      if (endedAuction) {
+        this.auctionsGateway.server.to(`auction-${job.data.auctionId}`).emit('auctionEnded', endedAuction);
+      }
     }
   }
 }

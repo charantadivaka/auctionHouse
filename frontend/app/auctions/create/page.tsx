@@ -1,249 +1,307 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-
-const DURATION_OPTIONS = [
-  { value: '5',     label: '5 Minutes',  subtitle: 'Quick test' },
-  { value: '60',    label: '1 Hour',     subtitle: 'Short auction' },
-  { value: '720',   label: '12 Hours',   subtitle: 'Half day' },
-  { value: '1440',  label: '24 Hours',   subtitle: 'Full day' },
-  { value: '4320',  label: '3 Days',     subtitle: 'Extended' },
-  { value: '10080', label: '7 Days',     subtitle: 'Full week' },
-];
+import { useAuth } from '@/context/AuthContext';
+import { api } from '@/lib/api';
+import Navbar from '@/components/Navbar';
+import { Calendar, DollarSign, Image as ImageIcon, Tag } from 'lucide-react';
 
 export default function CreateAuction() {
+  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
-  const [loading, setLoading]   = useState(false);
-  const [error,   setError]     = useState('');
-  const [success, setSuccess]   = useState(false);
+  const [categories, setCategories] = useState<any[]>([]);
 
   const [formData, setFormData] = useState({
-    title:           '',
-    description:     '',
-    startingPrice:   '',
-    durationMinutes: '60',
+    title: '',
+    description: '',
+    categoryId: '',
+    condition: 'good',
+    startingPrice: '',
+    minBidIncrement: '',
+    reservePrice: '',
+    endTime: '',
+    location: '',
+    shippingInfo: '',
   });
 
-  const handleChange = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    if (error) setError('');
-  };
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const validate = (): string => {
-    if (!formData.title.trim())         return 'Title is required.';
-    if (formData.title.length < 3)      return 'Title must be at least 3 characters.';
-    if (!formData.description.trim())   return 'Description is required.';
-    if (!formData.startingPrice)        return 'Starting price is required.';
-    const price = Number(formData.startingPrice);
-    if (isNaN(price) || price < 0.01)  return 'Starting price must be at least $0.01.';
-    return '';
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, authLoading, router]);
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const res = await api.get('/categories');
+        setCategories(res.data);
+      } catch (err) {
+        console.error('Failed to load categories', err);
+      }
+    };
+    fetchCategories();
+  }, []);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const validationError = validate();
-    if (validationError) { setError(validationError); return; }
-
-    setLoading(true);
     setError('');
-
-    const endTime = new Date(Date.now() + Number(formData.durationMinutes) * 60 * 1000);
+    setLoading(true);
 
     try {
-      const res = await fetch('http://localhost:3001/auctions', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          title:         formData.title.trim(),
-          description:   formData.description.trim(),
-          startingPrice: Number(formData.startingPrice),
-          endTime:       endTime.toISOString(),
-        }),
-      });
+      const payload = {
+        ...formData,
+        startingPrice: Number(formData.startingPrice),
+        minBidIncrement: formData.minBidIncrement ? Number(formData.minBidIncrement) : undefined,
+        reservePrice: formData.reservePrice ? Number(formData.reservePrice) : undefined,
+      };
 
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.message ?? `Server error ${res.status}`);
+      const res = await api.post('/auctions', payload);
+      router.push(`/auctions/${res.data.id}`);
+    } catch (err: any) {
+      if (Array.isArray(err.response?.data?.message)) {
+        setError(err.response.data.message[0]);
+      } else {
+        setError(err.response?.data?.message || 'Failed to create auction');
       }
-
-      const auction = await res.json();
-      setSuccess(true);
-      setTimeout(() => router.push(`/auctions/${auction.id}`), 600);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
       setLoading(false);
     }
   };
 
-  const charCount   = formData.description.length;
-  const priceNum    = Number(formData.startingPrice) || 0;
-  const selectedDur = DURATION_OPTIONS.find(d => d.value === formData.durationMinutes);
+  if (authLoading || !user) {
+    return null;
+  }
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-10 animate-fade-in">
-
-      {/* Back */}
-      <Link href="/" className="inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors mb-8 text-sm font-medium">
-        ← Back to Auctions
-      </Link>
-
-      {/* Header */}
-      <div className="mb-10">
-        <h1 className="text-4xl font-extrabold text-white mb-2" style={{ letterSpacing: '-0.5px' }}>
-          Create Auction
-        </h1>
-        <p className="text-gray-400">List your item and start receiving real-time bids.</p>
-      </div>
-
-      {/* Form card */}
-      <div className="glass-card p-8">
-        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-7">
-
-          {/* Title */}
-          <div>
-            <label className="form-label" htmlFor="title">Item Title</label>
-            <input
-              id="title"
-              type="text"
-              required
-              className="input-field"
-              value={formData.title}
-              onChange={e => handleChange('title', e.target.value)}
-              placeholder="e.g. Vintage Rolex Submariner"
-              maxLength={120}
-            />
-            <p className="text-xs text-gray-600 mt-1">{formData.title.length}/120 characters</p>
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <Navbar />
+      <main className="flex-grow max-w-4xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-10">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-8 py-6 border-b border-gray-100 bg-gray-50">
+            <h1 className="text-2xl font-bold text-gray-900">Create New Auction</h1>
+            <p className="mt-1 text-sm text-gray-500">Provide the details for the item you want to sell.</p>
           </div>
 
-          {/* Description */}
-          <div>
-            <label className="form-label" htmlFor="description">Description</label>
-            <textarea
-              id="description"
-              required
-              rows={5}
-              className="input-field"
-              value={formData.description}
-              onChange={e => handleChange('description', e.target.value)}
-              placeholder="Describe the item's condition, history, and what makes it special…"
-              maxLength={2000}
-            />
-            <p className="text-xs text-gray-600 mt-1">{charCount}/2000 characters</p>
-          </div>
-
-          {/* Price + Duration */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            <div>
-              <label className="form-label" htmlFor="startingPrice">Starting Price</label>
-              <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">$</span>
-                <input
-                  id="startingPrice"
-                  type="number"
-                  required
-                  min="0.01"
-                  step="0.01"
-                  className="input-field"
-                  style={{ paddingLeft: '2rem' }}
-                  value={formData.startingPrice}
-                  onChange={e => handleChange('startingPrice', e.target.value)}
-                  placeholder="0.00"
-                />
+          <form onSubmit={handleSubmit} className="px-8 py-8 space-y-8">
+            {error && (
+              <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded-md">
+                <p className="text-sm text-red-700">{error}</p>
               </div>
-              {priceNum > 0 && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Starting at <span className="price-display">${priceNum.toFixed(2)}</span>
-                </p>
-              )}
-            </div>
-
-            <div>
-              <label className="form-label" htmlFor="duration">Duration</label>
-              <select
-                id="duration"
-                className="input-field"
-                value={formData.durationMinutes}
-                onChange={e => handleChange('durationMinutes', e.target.value)}
-              >
-                {DURATION_OPTIONS.map(opt => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label} — {opt.subtitle}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Preview strip */}
-          <div className="p-5 rounded-xl flex flex-wrap gap-4"
-               style={{ background: 'rgba(92,124,250,0.06)', border: '1px solid rgba(92,124,250,0.15)' }}>
-            <div>
-              <div className="text-xs text-gray-500 mb-1">Auction closes in</div>
-              <div className="font-semibold text-white">{selectedDur?.label}</div>
-            </div>
-            <div style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '16px' }}>
-              <div className="text-xs text-gray-500 mb-1">Starting bid</div>
-              <div className="price-display font-semibold">{priceNum > 0 ? `$${priceNum.toFixed(2)}` : '—'}</div>
-            </div>
-            <div style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '16px' }}>
-              <div className="text-xs text-gray-500 mb-1">Listed as</div>
-              <div className="text-gray-300 text-sm font-medium">Test User 1</div>
-            </div>
-          </div>
-
-          {/* Error */}
-          {error && (
-            <div className="p-4 rounded-xl flex items-center gap-3 text-sm"
-                 style={{ background: 'rgba(250,82,82,0.1)', border: '1px solid rgba(250,82,82,0.25)' }}>
-              <span className="text-xl">⚠️</span>
-              <span className="text-red-400 font-medium">{error}</span>
-            </div>
-          )}
-
-          {/* Submit */}
-          <button
-            type="submit"
-            disabled={loading || success}
-            className="btn-primary w-full py-4 text-base"
-          >
-            {success ? (
-              <>✅ Auction Created! Redirecting…</>
-            ) : loading ? (
-              <>
-                <span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
-                Creating Auction…
-              </>
-            ) : (
-              <>🚀 Launch Auction</>
             )}
-          </button>
-        </form>
-      </div>
 
-      {/* Tips */}
-      <div className="mt-8 glass-card p-6">
-        <h3 className="font-semibold text-white mb-4 flex items-center gap-2">💡 Tips for a great listing</h3>
-        <ul className="flex flex-col gap-3 text-sm text-gray-400">
-          <li className="flex items-start gap-2">
-            <span className="text-brand-400 mt-0.5">→</span>
-            Use a clear, specific title that describes the exact item.
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-brand-400 mt-0.5">→</span>
-            Include condition, age, and any notable features in the description.
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-brand-400 mt-0.5">→</span>
-            Set a realistic starting price — lower prices attract more bidders.
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-brand-400 mt-0.5">→</span>
-            Shorter durations (1–24 hours) create urgency and higher engagement.
-          </li>
-        </ul>
-      </div>
+            {/* Basic Info */}
+            <div className="space-y-6">
+              <h2 className="text-lg font-medium text-gray-900 border-b pb-2">Basic Information</h2>
+              
+              <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label htmlFor="title" className="block text-sm font-medium text-gray-700">Title</label>
+                  <input
+                    type="text"
+                    name="title"
+                    id="title"
+                    required
+                    value={formData.title}
+                    onChange={handleChange}
+                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    placeholder="e.g. Vintage Rolex Submariner"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label htmlFor="description" className="block text-sm font-medium text-gray-700">Description</label>
+                  <textarea
+                    id="description"
+                    name="description"
+                    rows={4}
+                    required
+                    value={formData.description}
+                    onChange={handleChange}
+                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    placeholder="Describe the item in detail..."
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="categoryId" className="block text-sm font-medium text-gray-700">Category</label>
+                  <select
+                    id="categoryId"
+                    name="categoryId"
+                    required
+                    value={formData.categoryId}
+                    onChange={handleChange}
+                    className="mt-1 block w-full bg-white border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  >
+                    <option value="">Select a category</option>
+                    {categories.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="condition" className="block text-sm font-medium text-gray-700">Condition</label>
+                  <select
+                    id="condition"
+                    name="condition"
+                    required
+                    value={formData.condition}
+                    onChange={handleChange}
+                    className="mt-1 block w-full bg-white border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  >
+                    <option value="new">New</option>
+                    <option value="like_new">Like New</option>
+                    <option value="good">Good</option>
+                    <option value="fair">Fair</option>
+                    <option value="poor">Poor</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Pricing & Timing */}
+            <div className="space-y-6 pt-4">
+              <h2 className="text-lg font-medium text-gray-900 border-b pb-2">Pricing & Timing</h2>
+              
+              <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-3">
+                <div>
+                  <label htmlFor="startingPrice" className="block text-sm font-medium text-gray-700">Starting Price ($)</label>
+                  <div className="mt-1 relative rounded-md shadow-sm">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <span className="text-gray-500 sm:text-sm">$</span>
+                    </div>
+                    <input
+                      type="number"
+                      name="startingPrice"
+                      id="startingPrice"
+                      required
+                      min="0.01"
+                      step="0.01"
+                      value={formData.startingPrice}
+                      onChange={handleChange}
+                      className="block w-full pl-7 border border-gray-300 rounded-md py-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="minBidIncrement" className="block text-sm font-medium text-gray-700">Min. Bid Increment ($)</label>
+                  <div className="mt-1 relative rounded-md shadow-sm">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <span className="text-gray-500 sm:text-sm">$</span>
+                    </div>
+                    <input
+                      type="number"
+                      name="minBidIncrement"
+                      id="minBidIncrement"
+                      min="0.01"
+                      step="0.01"
+                      value={formData.minBidIncrement}
+                      onChange={handleChange}
+                      className="block w-full pl-7 border border-gray-300 rounded-md py-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                      placeholder="1.00"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="reservePrice" className="block text-sm font-medium text-gray-700">Reserve Price ($)</label>
+                  <div className="mt-1 relative rounded-md shadow-sm">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <span className="text-gray-500 sm:text-sm">$</span>
+                    </div>
+                    <input
+                      type="number"
+                      name="reservePrice"
+                      id="reservePrice"
+                      min="0.01"
+                      step="0.01"
+                      value={formData.reservePrice}
+                      onChange={handleChange}
+                      className="block w-full pl-7 border border-gray-300 rounded-md py-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                      placeholder="Optional"
+                    />
+                  </div>
+                </div>
+
+                <div className="sm:col-span-3">
+                  <label htmlFor="endTime" className="block text-sm font-medium text-gray-700">End Time</label>
+                  <input
+                    type="datetime-local"
+                    name="endTime"
+                    id="endTime"
+                    required
+                    value={formData.endTime}
+                    onChange={handleChange}
+                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">Auctions are active immediately upon creation and end at this time.</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Location */}
+            <div className="space-y-6 pt-4">
+              <h2 className="text-lg font-medium text-gray-900 border-b pb-2">Location & Shipping</h2>
+              
+              <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="location" className="block text-sm font-medium text-gray-700">Item Location</label>
+                  <input
+                    type="text"
+                    name="location"
+                    id="location"
+                    value={formData.location}
+                    onChange={handleChange}
+                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    placeholder="e.g. New York, NY"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="shippingInfo" className="block text-sm font-medium text-gray-700">Shipping Info</label>
+                  <input
+                    type="text"
+                    name="shippingInfo"
+                    id="shippingInfo"
+                    value={formData.shippingInfo}
+                    onChange={handleChange}
+                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    placeholder="e.g. Free shipping / Local pickup only"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => router.back()}
+                className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors"
+              >
+                {loading ? 'Creating...' : 'Create Auction'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </main>
     </div>
   );
 }
