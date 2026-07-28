@@ -15,10 +15,16 @@ import { User } from '../users/user.entity';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject:  [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        secret:      configService.get<string>('JWT_SECRET', 'changeme'),
-        signOptions: { expiresIn: configService.get<string>('JWT_EXPIRES_IN', '7d') } as any,
-      }),
+      useFactory: (configService: ConfigService) => {
+        const secret = configService.get<string>('JWT_SECRET');
+        if (!secret) {
+          throw new Error('JWT_SECRET environment variable is not set. App cannot start.');
+        }
+        return {
+          secret,
+          signOptions: { expiresIn: configService.get<string>('JWT_EXPIRES_IN', '7d') } as any,
+        };
+      },
     }),
   ],
   providers:   [AuthService, JwtStrategy],

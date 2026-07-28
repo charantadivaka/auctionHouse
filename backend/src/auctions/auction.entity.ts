@@ -37,6 +37,8 @@ export enum PaymentStatus {
 
 @Entity('auctions')
 @Index(['status', 'endTime'])
+// BUG-23: Index createdAt for efficient ORDER BY in default listing sort
+@Index('idx_auction_created_at', ['createdAt'])
 export class Auction {
   @PrimaryGeneratedColumn('uuid')
   id: string;

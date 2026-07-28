@@ -2,12 +2,15 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './user.entity';
+import { Auction, AuctionStatus } from '../auctions/auction.entity';
+import { Bid } from '../bids/bid.entity';
 
 export interface UpdateProfileDto {
   name?: string;
   bio?: string;
   location?: string;
   phone?: string;
+  avatarUrl?: string;
 }
 
 @Injectable()
@@ -15,10 +18,26 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private usersRepository: Repository<User>,
+    @InjectRepository(Auction)
+    private auctionsRepository: Repository<Auction>,
+    @InjectRepository(Bid)
+    private bidsRepository: Repository<Bid>,
   ) {}
 
-  async findAll(): Promise<User[]> {
-    return this.usersRepository.find();
+  // BUG-06: Paginated findAll, DB-level password exclusion
+  async findAll(page: number = 1, limit: number = 20) {
+    const [users, total] = await this.usersRepository.findAndCount({
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+      select: {
+        id: true, name: true, email: true, role: true,
+        isActive: true, avatarUrl: true, sellerRating: true,
+        totalRatingsCount: true, totalSales: true,
+        totalPurchases: true, createdAt: true,
+      },
+    });
+    return { data: users, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   async findOne(id: string): Promise<User> {
@@ -36,23 +55,30 @@ export class UsersService {
     if (dto.bio !== undefined) user.bio = dto.bio;
     if (dto.location !== undefined) user.location = dto.location;
     if (dto.phone !== undefined) user.phone = dto.phone;
+    if (dto.avatarUrl !== undefined) user.avatarUrl = dto.avatarUrl;
 
     return this.usersRepository.save(user);
   }
 
+  // BUG-15: Use targeted COUNT queries instead of loading all relations into memory
   async getDashboardStats(id: string) {
-    const user = await this.usersRepository.findOne({
-      where: { id },
-      relations: ['auctions', 'bids', 'bids.auction'],
-    });
-    
+    const user = await this.usersRepository.findOneBy({ id });
     if (!user) throw new NotFoundException('User not found');
-    
-    const activeListings = user.auctions.filter(a => a.status === 'active').length;
-    const soldListings = user.auctions.filter(a => a.status === 'sold').length;
-    
-    const activeBids = user.bids.filter(b => b.auction.status === 'active').length;
-    const wonAuctions = user.bids.filter(b => b.isWinningBid).length;
+
+    const [activeListings, soldListings, activeBids, wonAuctions] = await Promise.all([
+      this.auctionsRepository.count({
+        where: { creator: { id }, status: AuctionStatus.ACTIVE },
+      }),
+      this.auctionsRepository.count({
+        where: { creator: { id }, status: AuctionStatus.SOLD },
+      }),
+      this.bidsRepository.count({
+        where: { bidder: { id }, auction: { status: AuctionStatus.ACTIVE } },
+      }),
+      this.bidsRepository.count({
+        where: { bidder: { id }, isWinningBid: true },
+      }),
+    ]);
 
     return {
       activeListings,
@@ -62,7 +88,7 @@ export class UsersService {
       totalSales: user.totalSales,
       totalPurchases: user.totalPurchases,
       sellerRating: user.sellerRating,
-      totalRatingsCount: user.totalRatingsCount
+      totalRatingsCount: user.totalRatingsCount,
     };
   }
 }

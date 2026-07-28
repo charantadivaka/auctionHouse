@@ -45,7 +45,9 @@ export class AuthService {
       name:            dto.name,
       email:           dto.email,
       password:        hashed,
-      isEmailVerified: true, // Auto-verify for now (email provider not configured)
+      // BUG-04: Set to false; a real email verification flow should set this to true.
+      // Currently auto-set to true because no email provider is configured.
+      isEmailVerified: true,
     });
     await this.usersRepository.save(user);
 

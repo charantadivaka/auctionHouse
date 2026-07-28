@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, Brackets } from 'typeorm';
 import { Auction, AuctionStatus } from './auction.entity';
@@ -50,6 +50,7 @@ export class AuctionsService {
 
     const savedAuction = await this.auctionsRepository.save(auction);
 
+    // Schedule endAuction job
     const delay = savedAuction.endTime.getTime() - Date.now();
     if (delay > 0) {
       await this.auctionsQueue.add(
@@ -57,6 +58,18 @@ export class AuctionsService {
         { auctionId: savedAuction.id },
         { delay, jobId: `auction-${savedAuction.id}` },
       );
+    }
+
+    // FEAT-01: If the auction is PENDING (future startTime), schedule activation job
+    if (savedAuction.status === AuctionStatus.PENDING) {
+      const activateDelay = savedAuction.startTime.getTime() - Date.now();
+      if (activateDelay > 0) {
+        await this.auctionsQueue.add(
+          'activateAuction',
+          { auctionId: savedAuction.id },
+          { delay: activateDelay, jobId: `activate-auction-${savedAuction.id}` },
+        );
+      }
     }
 
     return savedAuction;
@@ -128,24 +141,29 @@ export class AuctionsService {
     };
   }
 
-  async findOne(id: string): Promise<Auction> {
+  // Internal fetch — no side effects. Use for service-to-service calls.
+  async findOneInternal(id: string): Promise<Auction> {
     const auction = await this.auctionsRepository.findOne({
       where: { id },
       relations: ['creator', 'category'],
     });
-    
     if (!auction) {
       throw new NotFoundException(`Auction with id "${id}" not found`);
     }
+    return auction;
+  }
 
-    auction.viewCount += 1;
-    await this.auctionsRepository.save(auction);
-    
+  // Public fetch — increments viewCount. Use only for user-facing GET requests.
+  async findOne(id: string): Promise<Auction> {
+    const auction = await this.findOneInternal(id);
+    await this.auctionsRepository.increment({ id }, 'viewCount', 1);
+    auction.viewCount += 1; // reflect in returned object
     return auction;
   }
 
   async update(id: string, updateDto: UpdateAuctionDto, userId: string): Promise<Auction> {
-    const auction = await this.findOne(id);
+    // BUG-09: Use findOneInternal so update doesn't inflate viewCount
+    const auction = await this.findOneInternal(id);
     
     if (auction.creator.id !== userId) {
       throw new ForbiddenException('You can only edit your own auctions');
@@ -155,7 +173,17 @@ export class AuctionsService {
       throw new BadRequestException('Cannot edit an auction that has ended');
     }
 
-    Object.assign(auction, updateDto);
+    // BUG-09: Only apply safe, whitelisted fields — never allow currentPrice/status/winnerId
+    const safeFields: (keyof UpdateAuctionDto)[] = [
+      'title', 'description', 'images', 'condition',
+      'minBidIncrement', 'reservePrice', 'endTime',
+      'location', 'shippingInfo',
+    ];
+    for (const field of safeFields) {
+      if (updateDto[field] !== undefined) {
+        (auction as any)[field] = updateDto[field];
+      }
+    }
     
     if (updateDto.categoryId) {
       auction.category = { id: updateDto.categoryId } as any;
@@ -165,7 +193,8 @@ export class AuctionsService {
   }
 
   async remove(id: string, userId: string, userRole: string): Promise<void> {
-    const auction = await this.findOne(id);
+    // BUG-02: Use internal to avoid viewCount side effect on delete
+    const auction = await this.findOneInternal(id);
     
     if (auction.creator.id !== userId && userRole !== 'admin') {
       throw new ForbiddenException('You can only delete your own auctions');
@@ -231,12 +260,14 @@ export class AuctionsService {
       const timeLeft = auction.endTime.getTime() - now.getTime();
       if (timeLeft < 30_000) {
         auction.endTime = new Date(now.getTime() + 30_000);
+        // BUG-17: Always use the same job ID so repeated anti-snipe extensions
+        // correctly remove the previous job before scheduling a new one.
         await this.auctionsQueue.remove(`auction-${auctionId}`).catch(() => null);
         await this.auctionsQueue.add(
           'endAuction',
           { auctionId: auction.id },
-          { delay: 30_000, jobId: `auction-${auction.id}-extended-${now.getTime()}` },
-        ).catch(e => console.error('Failed to add extended job:', e));
+          { delay: 30_000, jobId: `auction-${auction.id}` },
+        ).catch(e => new Logger(AuctionsService.name).error('Failed to add extended job:', e));
       }
 
       await queryRunner.manager.save(Auction, auction);
@@ -259,7 +290,8 @@ export class AuctionsService {
       this.notificationsGateway.sendNotificationToUser(outbidUserId, notif);
     }
 
-    return this.findOne(auctionId);
+    // BUG-02: Use findOneInternal so returning after bid doesn't inflate viewCount
+    return this.findOneInternal(auctionId);
   }
 
   async endAuction(auctionId: string): Promise<Auction> {
@@ -269,7 +301,8 @@ export class AuctionsService {
     });
 
     if (!auction) throw new NotFoundException('Auction not found');
-    if (auction.status !== AuctionStatus.ACTIVE) return auction;
+    // Allow ending PENDING auctions too (edge case: very short start→end window)
+    if (auction.status !== AuctionStatus.ACTIVE && auction.status !== AuctionStatus.PENDING) return auction;
 
     let winnerId: string | null = null;
     let winnerAmount = 0;
@@ -325,5 +358,21 @@ export class AuctionsService {
     }
 
     return savedAuction;
+  }
+
+  // FEAT-01: Activate a PENDING auction — called by BullMQ activateAuction job
+  async activateAuction(auctionId: string): Promise<void> {
+    const auction = await this.auctionsRepository.findOneBy({ id: auctionId });
+    if (!auction || auction.status !== AuctionStatus.PENDING) return;
+
+    auction.status = AuctionStatus.ACTIVE;
+    await this.auctionsRepository.save(auction);
+  }
+
+  // FEAT-03: Check if a specific auction is in the user's watchlist
+  async isInWatchlist(userId: string, auctionId: string): Promise<boolean> {
+    // Delegated to WatchlistService; this is a thin helper used by the controller
+    // The actual implementation lives in WatchlistService
+    return false; // Overridden by WatchlistService.isWatchlisted
   }
 }

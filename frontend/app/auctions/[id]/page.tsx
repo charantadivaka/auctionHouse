@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
@@ -10,6 +10,40 @@ import { formatDistanceToNow } from 'date-fns';
 import { Clock, Tag, ArrowLeft, Heart, ShieldCheck, MapPin, Package, Star } from 'lucide-react';
 import clsx from 'clsx';
 import Link from 'next/link';
+
+// BUG-13: Isolated CountdownTimer — only this component re-renders every second
+function CountdownTimer({ endTime }: { endTime: string }) {
+  const [timeLeft, setTimeLeft] = useState('');
+
+  useEffect(() => {
+    const updateTime = () => {
+      const end = new Date(endTime).getTime();
+      const now = Date.now();
+      const distance = end - now;
+
+      if (distance <= 0) {
+        setTimeLeft('Ended');
+        return;
+      }
+
+      const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+      if (days > 0) setTimeLeft(`${days}d ${hours}h ${minutes}m`);
+      else if (hours > 0) setTimeLeft(`${hours}h ${minutes}m ${seconds}s`);
+      else setTimeLeft(`${minutes}m ${seconds}s`);
+    };
+
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, [endTime]);
+
+  return <span>{timeLeft}</span>;
+}
+
 
 export default function AuctionDetails() {
   const params = useParams();
@@ -23,10 +57,7 @@ export default function AuctionDetails() {
   const [bidAmount, setBidAmount] = useState('');
   const [bidLoading, setBidLoading] = useState(false);
   const [error, setError] = useState('');
-  const [timeLeft, setTimeLeft] = useState<string>('');
   const [isWatchlisted, setIsWatchlisted] = useState(false);
-  
-  const timerRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   useEffect(() => {
     const fetchAuction = async () => {
@@ -39,11 +70,11 @@ export default function AuctionDetails() {
         setAuction(auctionRes.data);
         setBids(bidsRes.data.data);
         
+        // BUG-12: Use efficient single-item check endpoint instead of fetching entire list
         if (user) {
           try {
-            const watchRes = await api.get('/watchlist');
-            const inWatchlist = watchRes.data.data.some((a: any) => a.id === id);
-            setIsWatchlisted(inWatchlist);
+            const watchRes = await api.get(`/watchlist/check/${id}`);
+            setIsWatchlisted(watchRes.data.isWatchlisted);
           } catch (e) {}
         }
       } catch (err) {
@@ -95,41 +126,7 @@ export default function AuctionDetails() {
     };
   }, [id]);
 
-  // Countdown timer
-  useEffect(() => {
-    if (!auction) return;
-    
-    const updateTime = () => {
-      const end = new Date(auction.endTime).getTime();
-      const now = new Date().getTime();
-      const distance = end - now;
-
-      if (distance < 0) {
-        setTimeLeft('Ended');
-        if (timerRef.current) clearInterval(timerRef.current);
-        return;
-      }
-
-      const days = Math.floor(distance / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-
-      if (days > 0) setTimeLeft(`${days}d ${hours}h ${minutes}m`);
-      else if (hours > 0) setTimeLeft(`${hours}h ${minutes}m ${seconds}s`);
-      else setTimeLeft(`${minutes}m ${seconds}s`);
-    };
-
-    updateTime();
-    // Fix #20 clear existing interval
-    if (timerRef.current) clearInterval(timerRef.current);
-    // Fix #1 recreate timer when auction updates (end time changes)
-    timerRef.current = setInterval(updateTime, 1000);
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [auction]); // Dependency on auction fixes bug #1 (timer resetting properly on new bid)
+  // BUG-13: Timer removed from this component — now lives in CountdownTimer child
 
   const handlePlaceBid = (e: React.FormEvent) => {
     e.preventDefault();
@@ -275,14 +272,18 @@ export default function AuctionDetails() {
                 <div className="text-right">
                   <p className="text-sm text-gray-500 font-medium mb-1 flex items-center justify-end">
                     <Clock className="w-4 h-4 mr-1" /> 
-                    {auction.status === 'active' ? 'Time Left' : 'Status'}
+                    {auction.status === 'active' ? 'Time Left' : auction.status === 'pending' ? 'Starts' : 'Status'}
                   </p>
                   <p className={clsx(
                     "text-xl font-bold",
                     auction.status === 'active' ? "text-indigo-600" :
+                    auction.status === 'pending' ? "text-yellow-600" :
                     auction.status === 'sold' ? "text-green-600" : "text-red-600"
                   )}>
-                    {auction.status === 'active' ? timeLeft : auction.status.toUpperCase()}
+                    {/* BUG-13: Use isolated CountdownTimer component */}
+                    {auction.status === 'active' ? <CountdownTimer endTime={auction.endTime} /> :
+                     auction.status === 'pending' ? <CountdownTimer endTime={auction.startTime} /> :
+                     auction.status.toUpperCase()}
                   </p>
                 </div>
               </div>

@@ -1,7 +1,7 @@
 import { io, Socket } from 'socket.io-client';
 import Cookies from 'js-cookie';
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 class SocketManager {
   private static instance: SocketManager;
@@ -59,4 +59,31 @@ class SocketManager {
   }
 }
 
-export const socketManager = SocketManager.getInstance();
+// BUG-10: Only instantiate in browser to avoid SSR crash
+// BUG-27: Use NEXT_PUBLIC_API_URL as fallback for NEXT_PUBLIC_SOCKET_URL (same server)
+let _socketManager: SocketManager | null = null;
+
+export const socketManager = {
+  get instance(): SocketManager {
+    if (typeof window === 'undefined') {
+      throw new Error('SocketManager cannot be used on the server side');
+    }
+    if (!_socketManager) {
+      _socketManager = SocketManager.getInstance();
+    }
+    return _socketManager;
+  },
+  getAuctionsSocket: () => socketManager.instance.getAuctionsSocket(),
+  getNotificationsSocket: () => socketManager.instance.getNotificationsSocket(),
+  disconnectAll: () => {
+    if (typeof window !== 'undefined' && _socketManager) {
+      _socketManager.disconnectAll();
+    }
+  },
+  reconnectAll: () => {
+    if (typeof window !== 'undefined') {
+      socketManager.instance.reconnectAll();
+    }
+  },
+};
+

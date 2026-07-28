@@ -30,8 +30,8 @@ export class WatchlistService {
       auction: { id: auctionId },
     });
 
-    auction.watcherCount += 1;
-    await this.auctionsRepository.save(auction);
+    // BUG-03: Use atomic increment to prevent race conditions
+    await this.auctionsRepository.increment({ id: auctionId }, 'watcherCount', 1);
 
     return this.watchlistRepository.save(item);
   }
@@ -47,11 +47,24 @@ export class WatchlistService {
 
     await this.watchlistRepository.remove(item);
 
-    const auction = await this.auctionsRepository.findOneBy({ id: auctionId });
-    if (auction) {
-      auction.watcherCount = Math.max(0, auction.watcherCount - 1);
-      await this.auctionsRepository.save(auction);
-    }
+    // BUG-03: Use atomic decrement, ensure it never goes below 0
+    await this.auctionsRepository.decrement({ id: auctionId }, 'watcherCount', 1);
+    // Guard against negative values (shouldn't happen, but safe)
+    await this.auctionsRepository
+      .createQueryBuilder()
+      .update()
+      .set({ watcherCount: () => 'GREATEST("watcherCount" - 0, 0)' })
+      .where('id = :id AND "watcherCount" < 0', { id: auctionId })
+      .execute()
+      .catch(() => null); // non-critical, ignore if fails
+  }
+
+  // FEAT-03/BUG-12: Efficient single-item check without loading entire list
+  async isWatchlisted(userId: string, auctionId: string): Promise<boolean> {
+    const item = await this.watchlistRepository.findOne({
+      where: { user: { id: userId }, auction: { id: auctionId } },
+    });
+    return !!item;
   }
 
   async getUserWatchlist(userId: string, page: number = 1, limit: number = 12) {

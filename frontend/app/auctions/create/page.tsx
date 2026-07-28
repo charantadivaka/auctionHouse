@@ -24,6 +24,8 @@ export default function CreateAuction() {
     location: '',
     shippingInfo: '',
   });
+  // BUG-25: Images managed separately as a URL array
+  const [imageUrls, setImageUrls] = useState<string[]>(['']);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -62,6 +64,8 @@ export default function CreateAuction() {
         startingPrice: Number(formData.startingPrice),
         minBidIncrement: formData.minBidIncrement ? Number(formData.minBidIncrement) : undefined,
         reservePrice: formData.reservePrice ? Number(formData.reservePrice) : undefined,
+        // BUG-25: Include filtered image URLs (skip empty strings)
+        images: imageUrls.filter(url => url.trim() !== ''),
       };
 
       const res = await api.post('/auctions', payload);
@@ -247,6 +251,57 @@ export default function CreateAuction() {
                   />
                   <p className="mt-1 text-xs text-gray-500">Auctions are active immediately upon creation and end at this time.</p>
                 </div>
+              </div>
+            </div>
+
+            {/* Images */}
+            <div className="space-y-6 pt-4">
+              <h2 className="text-lg font-medium text-gray-900 border-b pb-2">
+                <span className="flex items-center gap-2"><ImageIcon className="w-5 h-5" /> Images</span>
+              </h2>
+              <p className="text-sm text-gray-500">Add up to 5 image URLs for your listing.</p>
+              <div className="space-y-3">
+                {imageUrls.map((url, idx) => (
+                  <div key={idx} className="flex items-center gap-3">
+                    {url && (
+                      <img
+                        src={url}
+                        alt={`Preview ${idx + 1}`}
+                        className="w-12 h-12 object-cover rounded border border-gray-200 shrink-0"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    )}
+                    <input
+                      type="url"
+                      value={url}
+                      onChange={(e) => {
+                        const updated = [...imageUrls];
+                        updated[idx] = e.target.value;
+                        setImageUrls(updated);
+                      }}
+                      placeholder={`Image URL ${idx + 1} (e.g. https://...)`}
+                      className="flex-1 border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    />
+                    {imageUrls.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setImageUrls(imageUrls.filter((_, i) => i !== idx))}
+                        className="text-red-400 hover:text-red-600 font-bold text-lg leading-none"
+                      >
+                        &times;
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {imageUrls.length < 5 && (
+                  <button
+                    type="button"
+                    onClick={() => setImageUrls([...imageUrls, ''])}
+                    className="text-indigo-600 hover:text-indigo-700 text-sm font-medium flex items-center gap-1"
+                  >
+                    + Add another image
+                  </button>
+                )}
               </div>
             </div>
 

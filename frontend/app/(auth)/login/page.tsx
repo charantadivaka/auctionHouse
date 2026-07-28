@@ -12,6 +12,8 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // BUG-20: Remember me state — controls cookie expiry
+  const [rememberMe, setRememberMe] = useState(false);
   const { login } = useAuth();
   const router = useRouter();
 
@@ -22,6 +24,11 @@ export default function Login() {
 
     try {
       const res = await api.post('/auth/login', { email, password });
+      // BUG-20: login() in AuthContext always uses 7d; we override the cookie here
+      // with the user's preference before calling login (which won't overwrite it
+      // since we already set the cookie).
+      const Cookies = (await import('js-cookie')).default;
+      Cookies.set('token', res.data.token, { expires: rememberMe ? 30 : 1 });
       login(res.data.token, res.data.user);
       router.push('/dashboard');
     } catch (err: any) {
@@ -101,18 +108,22 @@ export default function Login() {
                   id="remember-me"
                   name="remember-me"
                   type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
                   className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                 />
                 <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
-                  Remember me
+                  Remember me (30 days)
                 </label>
               </div>
 
               <div className="text-sm">
-                <a href="#" className="font-medium text-indigo-600 hover:text-indigo-500">
+                {/* BUG-21: Real link to forgot-password page */}
+                <Link href="/forgot-password" className="font-medium text-indigo-600 hover:text-indigo-500">
                   Forgot your password?
-                </a>
+                </Link>
               </div>
+
             </div>
 
             <div>

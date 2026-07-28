@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { CategoriesService } from './categories/categories.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -24,9 +25,19 @@ async function bootstrap() {
     credentials: true,
   });
 
+  // FEAT-02: Seed default categories on every startup (idempotent)
+  try {
+    const categoriesService = app.get(CategoriesService);
+    await categoriesService.seedDefaultCategories();
+    Logger.log('Default categories seeded successfully', 'Bootstrap');
+  } catch (e: any) {
+    Logger.warn(`Category seeding skipped: ${e.message}`, 'Bootstrap');
+  }
+
   const port = configService.get<number>('APP_PORT', 3001);
   await app.listen(port);
   
   Logger.log(`Backend is running on http://localhost:${port}`, 'Bootstrap');
 }
 bootstrap();
+

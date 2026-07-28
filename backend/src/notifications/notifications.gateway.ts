@@ -9,9 +9,12 @@ import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 
+// Read FRONTEND_URL at module-load time so the decorator gets the correct value
+const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
 @WebSocketGateway({
   cors: {
-    origin: 'http://localhost:3000',
+    origin: frontendUrl,
     credentials: true,
   },
   namespace: '/notifications',

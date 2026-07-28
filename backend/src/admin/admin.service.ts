@@ -1,6 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { User, UserRole } from '../users/user.entity';
 import { Auction, AuctionStatus } from '../auctions/auction.entity';
 
@@ -11,6 +13,8 @@ export class AdminService {
     private usersRepository: Repository<User>,
     @InjectRepository(Auction)
     private auctionsRepository: Repository<Auction>,
+    // BUG-07: Inject queue so we can remove scheduled endAuction jobs on cancel
+    @InjectQueue('auctions') private auctionsQueue: Queue,
   ) {}
 
   async getStats() {
@@ -44,12 +48,25 @@ export class AdminService {
       order: { createdAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
+      // BUG-05: Exclude password at DB level as defense-in-depth
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+        isEmailVerified: true,
+        avatarUrl: true,
+        sellerRating: true,
+        totalRatingsCount: true,
+        totalSales: true,
+        totalPurchases: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
     return {
-      data: users.map(u => {
-        const { password, ...rest } = u;
-        return rest;
-      }),
+      data: users,
       total,
       page,
       limit,
@@ -60,7 +77,8 @@ export class AdminService {
   async toggleUserStatus(userId: string): Promise<{ isActive: boolean }> {
     const user = await this.usersRepository.findOneBy({ id: userId });
     if (!user) throw new NotFoundException('User not found');
-    if (user.role === UserRole.ADMIN) throw new NotFoundException('Cannot ban admin users');
+    // BUG-18: Use ForbiddenException (user exists, operation is not permitted)
+    if (user.role === UserRole.ADMIN) throw new ForbiddenException('Cannot change status of admin users');
 
     user.isActive = !user.isActive;
     await this.usersRepository.save(user);
@@ -71,6 +89,9 @@ export class AdminService {
   async cancelAuction(auctionId: string): Promise<void> {
     const auction = await this.auctionsRepository.findOneBy({ id: auctionId });
     if (!auction) throw new NotFoundException('Auction not found');
+
+    // BUG-07: Also remove the scheduled BullMQ job so it doesn't fire after cancel
+    await this.auctionsQueue.remove(`auction-${auctionId}`).catch(() => null);
 
     auction.status = AuctionStatus.CANCELLED;
     await this.auctionsRepository.save(auction);

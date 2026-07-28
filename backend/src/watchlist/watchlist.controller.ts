@@ -18,6 +18,13 @@ export class WatchlistController {
     return this.watchlistService.getUserWatchlist(user.id, parseInt(page, 10), parseInt(limit, 10));
   }
 
+  // FEAT-03/BUG-12: Efficient single-item watchlist check
+  @Get('check/:auctionId')
+  async checkWatchlist(@Param('auctionId') auctionId: string, @CurrentUser() user: User) {
+    const isWatchlisted = await this.watchlistService.isWatchlisted(user.id, auctionId);
+    return { isWatchlisted };
+  }
+
   @Post(':auctionId')
   async addToWatchlist(@Param('auctionId') auctionId: string, @CurrentUser() user: User) {
     await this.watchlistService.add(user.id, auctionId);
@@ -30,3 +37,4 @@ export class WatchlistController {
     return { success: true };
   }
 }
+

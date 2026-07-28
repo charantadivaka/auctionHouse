@@ -4,10 +4,21 @@ import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { Search, Bell, Menu, X, PlusCircle, LogOut } from 'lucide-react';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function Navbar() {
-  const { user, logout } = useAuth();
+  const { user, logout, unreadCount } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  // BUG-19: Functional search bar state
+  const [searchQuery, setSearchQuery] = useState('');
+  const router = useRouter();
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      router.push(`/?search=${encodeURIComponent(searchQuery.trim())}`);
+    }
+  };
 
   return (
     <nav className="bg-white shadow-sm sticky top-0 z-50">
@@ -28,14 +39,19 @@ export default function Navbar() {
           </div>
 
           <div className="hidden sm:ml-6 sm:flex sm:items-center sm:space-x-4">
-            <div className="relative">
+            {/* BUG-19: Functional search form */}
+            <form onSubmit={handleSearch} className="relative">
               <input
                 type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search auctions..."
                 className="w-64 pl-10 pr-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
               />
-              <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
-            </div>
+              <button type="submit" className="absolute left-3 top-2.5">
+                <Search className="h-5 w-5 text-gray-400 hover:text-indigo-500 transition-colors" />
+              </button>
+            </form>
 
             {user ? (
               <>
@@ -44,10 +60,15 @@ export default function Navbar() {
                   <span>Sell</span>
                 </Link>
                 
-                <button className="text-gray-500 hover:text-indigo-600 transition-colors p-2 relative">
+                {/* BUG-08: Bell now shows real unread count from AuthContext */}
+                <Link href="/notifications" className="text-gray-500 hover:text-indigo-600 transition-colors p-2 relative">
                   <Bell className="h-6 w-6" />
-                  <span className="absolute top-1 right-1 h-2.5 w-2.5 bg-red-500 rounded-full border-2 border-white"></span>
-                </button>
+                  {unreadCount > 0 && (
+                    <span className="absolute top-1 right-1 h-4 w-4 bg-red-500 rounded-full border-2 border-white flex items-center justify-center text-[9px] font-bold text-white">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
+                </Link>
 
                 <div className="relative ml-3 group">
                   <button className="flex text-sm border-2 border-transparent rounded-full focus:outline-none focus:border-indigo-500 transition">
@@ -66,6 +87,9 @@ export default function Navbar() {
                       </Link>
                       <Link href="/dashboard" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                         Dashboard
+                      </Link>
+                      <Link href="/notifications" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                        Notifications {unreadCount > 0 && <span className="ml-1 text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">{unreadCount}</span>}
                       </Link>
                       {user.role === 'admin' && (
                         <Link href="/admin" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
@@ -110,6 +134,21 @@ export default function Navbar() {
       {/* Mobile menu */}
       {isMenuOpen && (
         <div className="sm:hidden bg-white border-t border-gray-200">
+          {/* BUG-19: Mobile search */}
+          <div className="px-4 pt-3 pb-2">
+            <form onSubmit={handleSearch} className="relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search auctions..."
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+              />
+              <button type="submit" className="absolute left-3 top-2.5">
+                <Search className="h-5 w-5 text-gray-400" />
+              </button>
+            </form>
+          </div>
           <div className="pt-2 pb-3 space-y-1">
             <Link href="/" className="bg-indigo-50 border-indigo-500 text-indigo-700 block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
               Browse
@@ -139,6 +178,9 @@ export default function Navbar() {
                 <Link href="/dashboard" className="block px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100">
                   Dashboard
                 </Link>
+                <Link href="/notifications" className="block px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100">
+                  Notifications {unreadCount > 0 && <span className="ml-1 text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full">{unreadCount}</span>}
+                </Link>
                 <button
                   onClick={logout}
                   className="block w-full text-left px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"
@@ -162,3 +204,4 @@ export default function Navbar() {
     </nav>
   );
 }
+
