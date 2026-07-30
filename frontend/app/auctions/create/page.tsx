@@ -5,357 +5,275 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
 import Navbar from '@/components/Navbar';
-import { Calendar, DollarSign, Image as ImageIcon, Tag } from 'lucide-react';
+import { Image as ImageIcon, DollarSign, Clock, Timer, AlertCircle, Plus, X, Video } from 'lucide-react';
+
+type AuctionType = 'timed' | 'manual';
 
 export default function CreateAuction() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [categories, setCategories] = useState<any[]>([]);
+  const [auctionType, setAuctionType] = useState<AuctionType>('timed');
+  const [imageUrls, setImageUrls] = useState<string[]>(['']);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const [formData, setFormData] = useState({
+  const [form, setForm] = useState({
     title: '',
     description: '',
     categoryId: '',
     condition: 'good',
     startingPrice: '',
-    minBidIncrement: '',
+    minBidIncrement: '1',
     reservePrice: '',
     endTime: '',
     location: '',
     shippingInfo: '',
+    videoUrl: '',
   });
-  // BUG-25: Images managed separately as a URL array
-  const [imageUrls, setImageUrls] = useState<string[]>(['']);
-
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push('/login');
-    }
+    if (!authLoading && !user) router.push('/login');
   }, [user, authLoading, router]);
 
   useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        const res = await api.get('/categories');
-        setCategories(res.data);
-      } catch (err) {
-        console.error('Failed to load categories', err);
-      }
-    };
-    fetchCategories();
+    api.get('/categories').then(res => setCategories(res.data)).catch(() => {});
   }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setForm(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    if (auctionType === 'timed' && !form.endTime) {
+      setError('End time is required for timed auctions.');
+      return;
+    }
     setLoading(true);
-
     try {
-      const payload = {
-        ...formData,
-        startingPrice: Number(formData.startingPrice),
-        minBidIncrement: formData.minBidIncrement ? Number(formData.minBidIncrement) : undefined,
-        reservePrice: formData.reservePrice ? Number(formData.reservePrice) : undefined,
-        // BUG-25: Include filtered image URLs (skip empty strings)
-        images: imageUrls.filter(url => url.trim() !== ''),
+      const payload: any = {
+        ...form,
+        auctionType,
+        startingPrice: Number(form.startingPrice),
+        minBidIncrement: form.minBidIncrement ? Number(form.minBidIncrement) : 1,
+        reservePrice: form.reservePrice ? Number(form.reservePrice) : undefined,
+        images: imageUrls.filter(u => u.trim() !== ''),
+        videoUrl: form.videoUrl || undefined,
       };
-
+      if (auctionType === 'manual') {
+        delete payload.endTime;
+        // Set a far-future end time for manual auctions
+        payload.endTime = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+      }
       const res = await api.post('/auctions', payload);
       router.push(`/auctions/${res.data.id}`);
     } catch (err: any) {
-      if (Array.isArray(err.response?.data?.message)) {
-        setError(err.response.data.message[0]);
-      } else {
-        setError(err.response?.data?.message || 'Failed to create auction');
-      }
+      const msg = err.response?.data?.message;
+      setError(Array.isArray(msg) ? msg[0] : msg || 'Failed to create auction');
     } finally {
       setLoading(false);
     }
   };
 
-  if (authLoading || !user) {
-    return null;
-  }
+  if (authLoading || !user) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-gray-50">
       <Navbar />
-      <main className="flex-grow max-w-4xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-10">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="px-8 py-6 border-b border-gray-100 bg-gray-50">
-            <h1 className="text-2xl font-bold text-gray-900">Create New Auction</h1>
-            <p className="mt-1 text-sm text-gray-500">Provide the details for the item you want to sell.</p>
+      <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-3xl font-extrabold text-gray-900">Create Auction</h1>
+          <p className="mt-1 text-sm text-gray-500">Fill in the details to list your item for auction.</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {error && (
+            <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm animate-fade-in">
+              <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" /> {error}
+            </div>
+          )}
+
+          {/* Auction Type */}
+          <div className="card p-6">
+            <h2 className="text-base font-bold text-gray-900 mb-1 flex items-center gap-2">
+              <Timer className="w-4 h-4 text-indigo-500" /> Auction Type
+            </h2>
+            <p className="text-xs text-gray-500 mb-4">Choose how this auction will be managed.</p>
+            <div className="grid grid-cols-2 gap-3">
+              {(['timed', 'manual'] as AuctionType[]).map(type => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setAuctionType(type)}
+                  className={`p-4 rounded-xl border-2 text-left transition-all ${
+                    auctionType === type
+                      ? 'border-indigo-500 bg-indigo-50'
+                      : 'border-gray-200 hover:border-indigo-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1.5">
+                    {type === 'timed' ? <Clock className="w-4 h-4 text-indigo-500" /> : <Timer className="w-4 h-4 text-purple-500" />}
+                    <span className="font-semibold text-sm text-gray-900 capitalize">{type} Auction</span>
+                    {auctionType === type && <span className="ml-auto badge badge-primary">Selected</span>}
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {type === 'timed'
+                      ? 'Automatically ends at a set date & time. Winner is declared at expiry.'
+                      : 'You control when it ends. Manually end the auction whenever ready.'}
+                  </p>
+                </button>
+              ))}
+            </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="px-8 py-8 space-y-8">
-            {error && (
-              <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded-md">
-                <p className="text-sm text-red-700">{error}</p>
+          {/* Basic Info */}
+          <div className="card p-6 space-y-5">
+            <h2 className="text-base font-bold text-gray-900">Basic Information</h2>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Title <span className="text-red-500">*</span></label>
+              <input name="title" required value={form.title} onChange={handleChange} className="input-field" placeholder="e.g. Vintage Rolex Submariner" />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Description <span className="text-red-500">*</span></label>
+              <textarea name="description" required rows={4} value={form.description} onChange={handleChange} className="input-field resize-none" placeholder="Describe your item in detail — condition, history, any flaws..." />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Category</label>
+                <select name="categoryId" required value={form.categoryId} onChange={handleChange} className="input-field" suppressHydrationWarning>
+                  <option value="">Select category</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Condition</label>
+                <select name="condition" value={form.condition} onChange={handleChange} className="input-field" suppressHydrationWarning>
+                  <option value="new">New</option>
+                  <option value="like_new">Like New</option>
+                  <option value="good">Good</option>
+                  <option value="fair">Fair</option>
+                  <option value="poor">Poor</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Pricing & Timing */}
+          <div className="card p-6 space-y-5">
+            <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <DollarSign className="w-4 h-4 text-green-500" /> Pricing & Timing
+            </h2>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Starting Price <span className="text-red-500">*</span></label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">$</span>
+                  <input type="number" name="startingPrice" required min="0.01" step="0.01" value={form.startingPrice} onChange={handleChange} className="input-field pl-7" placeholder="0.00" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Min. Bid Increment</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">$</span>
+                  <input type="number" name="minBidIncrement" min="0.01" step="0.01" value={form.minBidIncrement} onChange={handleChange} className="input-field pl-7" placeholder="1.00" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Reserve Price</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">$</span>
+                  <input type="number" name="reservePrice" min="0.01" step="0.01" value={form.reservePrice} onChange={handleChange} className="input-field pl-7" placeholder="Optional" />
+                </div>
+              </div>
+            </div>
+
+            {auctionType === 'timed' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">End Date & Time <span className="text-red-500">*</span></label>
+                <input type="datetime-local" name="endTime" value={form.endTime} onChange={handleChange} min={new Date().toISOString().slice(0, 16)} className="input-field" />
+                <p className="text-xs text-gray-400 mt-1.5">The auction will automatically end at this time.</p>
               </div>
             )}
+          </div>
 
-            {/* Basic Info */}
-            <div className="space-y-6">
-              <h2 className="text-lg font-medium text-gray-900 border-b pb-2">Basic Information</h2>
-              
-              <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
-                <div className="sm:col-span-2">
-                  <label htmlFor="title" className="block text-sm font-medium text-gray-700">Title</label>
+          {/* Images & Video */}
+          <div className="card p-6 space-y-5">
+            <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <ImageIcon className="w-4 h-4 text-blue-500" /> Images & Video
+            </h2>
+
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-gray-700">Image URLs (up to 5)</label>
+              {imageUrls.map((url, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  {url && (
+                    <img src={url} alt="" className="w-10 h-10 rounded-lg object-cover border border-gray-200 flex-shrink-0" onError={e => { (e.target as any).style.display='none'; }} />
+                  )}
                   <input
-                    type="text"
-                    name="title"
-                    id="title"
-                    required
-                    value={formData.title}
-                    onChange={handleChange}
-                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                    placeholder="e.g. Vintage Rolex Submariner"
+                    type="url"
+                    value={url}
+                    onChange={e => { const u = [...imageUrls]; u[idx] = e.target.value; setImageUrls(u); }}
+                    placeholder={`Image URL ${idx + 1}`}
+                    className="input-field flex-1"
                   />
+                  {imageUrls.length > 1 && (
+                    <button type="button" onClick={() => setImageUrls(imageUrls.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 p-1">
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
+              ))}
+              {imageUrls.length < 5 && (
+                <button type="button" onClick={() => setImageUrls([...imageUrls, ''])} className="flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-700 font-medium">
+                  <Plus className="w-4 h-4" /> Add image
+                </button>
+              )}
+            </div>
 
-                <div className="sm:col-span-2">
-                  <label htmlFor="description" className="block text-sm font-medium text-gray-700">Description</label>
-                  <textarea
-                    id="description"
-                    name="description"
-                    rows={4}
-                    required
-                    value={formData.description}
-                    onChange={handleChange}
-                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                    placeholder="Describe the item in detail..."
-                  />
-                </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5">
+                <Video className="w-4 h-4" /> Product Video URL <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <input type="url" name="videoUrl" value={form.videoUrl} onChange={handleChange} className="input-field" placeholder="https://youtube.com/watch?v=..." />
+            </div>
+          </div>
 
-                <div>
-                  <label htmlFor="categoryId" className="block text-sm font-medium text-gray-700">Category</label>
-                  <select
-                    id="categoryId"
-                    name="categoryId"
-                    required
-                    value={formData.categoryId}
-                    onChange={handleChange}
-                    className="mt-1 block w-full bg-white border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                  >
-                    <option value="">Select a category</option>
-                    {categories.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="condition" className="block text-sm font-medium text-gray-700">Condition</label>
-                  <select
-                    id="condition"
-                    name="condition"
-                    required
-                    value={formData.condition}
-                    onChange={handleChange}
-                    className="mt-1 block w-full bg-white border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                  >
-                    <option value="new">New</option>
-                    <option value="like_new">Like New</option>
-                    <option value="good">Good</option>
-                    <option value="fair">Fair</option>
-                    <option value="poor">Poor</option>
-                  </select>
-                </div>
+          {/* Location */}
+          <div className="card p-6 space-y-5">
+            <h2 className="text-base font-bold text-gray-900">Location & Shipping</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Item Location</label>
+                <input name="location" value={form.location} onChange={handleChange} className="input-field" placeholder="e.g. New York, USA" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Shipping Info</label>
+                <input name="shippingInfo" value={form.shippingInfo} onChange={handleChange} className="input-field" placeholder="e.g. Free shipping" />
               </div>
             </div>
+          </div>
 
-            {/* Pricing & Timing */}
-            <div className="space-y-6 pt-4">
-              <h2 className="text-lg font-medium text-gray-900 border-b pb-2">Pricing & Timing</h2>
-              
-              <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-3">
-                <div>
-                  <label htmlFor="startingPrice" className="block text-sm font-medium text-gray-700">Starting Price ($)</label>
-                  <div className="mt-1 relative rounded-md shadow-sm">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <span className="text-gray-500 sm:text-sm">$</span>
-                    </div>
-                    <input
-                      type="number"
-                      name="startingPrice"
-                      id="startingPrice"
-                      required
-                      min="0.01"
-                      step="0.01"
-                      value={formData.startingPrice}
-                      onChange={handleChange}
-                      className="block w-full pl-7 border border-gray-300 rounded-md py-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                      placeholder="0.00"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label htmlFor="minBidIncrement" className="block text-sm font-medium text-gray-700">Min. Bid Increment ($)</label>
-                  <div className="mt-1 relative rounded-md shadow-sm">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <span className="text-gray-500 sm:text-sm">$</span>
-                    </div>
-                    <input
-                      type="number"
-                      name="minBidIncrement"
-                      id="minBidIncrement"
-                      min="0.01"
-                      step="0.01"
-                      value={formData.minBidIncrement}
-                      onChange={handleChange}
-                      className="block w-full pl-7 border border-gray-300 rounded-md py-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                      placeholder="1.00"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label htmlFor="reservePrice" className="block text-sm font-medium text-gray-700">Reserve Price ($)</label>
-                  <div className="mt-1 relative rounded-md shadow-sm">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <span className="text-gray-500 sm:text-sm">$</span>
-                    </div>
-                    <input
-                      type="number"
-                      name="reservePrice"
-                      id="reservePrice"
-                      min="0.01"
-                      step="0.01"
-                      value={formData.reservePrice}
-                      onChange={handleChange}
-                      className="block w-full pl-7 border border-gray-300 rounded-md py-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                      placeholder="Optional"
-                    />
-                  </div>
-                </div>
-
-                <div className="sm:col-span-3">
-                  <label htmlFor="endTime" className="block text-sm font-medium text-gray-700">End Time</label>
-                  <input
-                    type="datetime-local"
-                    name="endTime"
-                    id="endTime"
-                    required
-                    value={formData.endTime}
-                    onChange={handleChange}
-                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">Auctions are active immediately upon creation and end at this time.</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Images */}
-            <div className="space-y-6 pt-4">
-              <h2 className="text-lg font-medium text-gray-900 border-b pb-2">
-                <span className="flex items-center gap-2"><ImageIcon className="w-5 h-5" /> Images</span>
-              </h2>
-              <p className="text-sm text-gray-500">Add up to 5 image URLs for your listing.</p>
-              <div className="space-y-3">
-                {imageUrls.map((url, idx) => (
-                  <div key={idx} className="flex items-center gap-3">
-                    {url && (
-                      <img
-                        src={url}
-                        alt={`Preview ${idx + 1}`}
-                        className="w-12 h-12 object-cover rounded border border-gray-200 shrink-0"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                      />
-                    )}
-                    <input
-                      type="url"
-                      value={url}
-                      onChange={(e) => {
-                        const updated = [...imageUrls];
-                        updated[idx] = e.target.value;
-                        setImageUrls(updated);
-                      }}
-                      placeholder={`Image URL ${idx + 1} (e.g. https://...)`}
-                      className="flex-1 border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                    />
-                    {imageUrls.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => setImageUrls(imageUrls.filter((_, i) => i !== idx))}
-                        className="text-red-400 hover:text-red-600 font-bold text-lg leading-none"
-                      >
-                        &times;
-                      </button>
-                    )}
-                  </div>
-                ))}
-                {imageUrls.length < 5 && (
-                  <button
-                    type="button"
-                    onClick={() => setImageUrls([...imageUrls, ''])}
-                    className="text-indigo-600 hover:text-indigo-700 text-sm font-medium flex items-center gap-1"
-                  >
-                    + Add another image
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Location */}
-            <div className="space-y-6 pt-4">
-              <h2 className="text-lg font-medium text-gray-900 border-b pb-2">Location & Shipping</h2>
-              
-              <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="location" className="block text-sm font-medium text-gray-700">Item Location</label>
-                  <input
-                    type="text"
-                    name="location"
-                    id="location"
-                    value={formData.location}
-                    onChange={handleChange}
-                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                    placeholder="e.g. New York, NY"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="shippingInfo" className="block text-sm font-medium text-gray-700">Shipping Info</label>
-                  <input
-                    type="text"
-                    name="shippingInfo"
-                    id="shippingInfo"
-                    value={formData.shippingInfo}
-                    onChange={handleChange}
-                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                    placeholder="e.g. Free shipping / Local pickup only"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-5 flex justify-end">
-              <button
-                type="button"
-                onClick={() => router.back()}
-                className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors"
-              >
-                {loading ? 'Creating...' : 'Create Auction'}
-              </button>
-            </div>
-          </form>
-        </div>
+          {/* Actions */}
+          <div className="flex justify-end gap-3 pb-8">
+            <button type="button" onClick={() => router.back()} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={loading} className="btn-primary px-8">
+              {loading ? (
+                <span className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Creating...
+                </span>
+              ) : 'Create Auction'}
+            </button>
+          </div>
+        </form>
       </main>
     </div>
   );

@@ -1,10 +1,14 @@
 import { IsOptional, IsString, IsEnum, IsNumberString } from 'class-validator';
-import { AuctionStatus, AuctionCondition } from '../auction.entity';
+import { AuctionStatus, AuctionCondition, AuctionType } from '../auction.entity';
 
 export class QueryAuctionDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @IsOptional()
+  @IsString()
+  seller?: string;
 
   @IsOptional()
   @IsString()
@@ -19,6 +23,10 @@ export class QueryAuctionDto {
   condition?: AuctionCondition;
 
   @IsOptional()
+  @IsEnum(AuctionType)
+  auctionType?: AuctionType;
+
+  @IsOptional()
   @IsNumberString()
   minPrice?: string;
 
@@ -28,7 +36,7 @@ export class QueryAuctionDto {
 
   @IsOptional()
   @IsString()
-  sort?: 'price_asc' | 'price_desc' | 'ending_soon' | 'most_bids' | 'newest';
+  sort?: 'price_asc' | 'price_desc' | 'ending_soon' | 'most_bids' | 'newest' | 'most_viewed';
 
   @IsOptional()
   @IsNumberString()

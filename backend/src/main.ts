@@ -3,12 +3,19 @@ import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CategoriesService } from './categories/categories.service';
+import helmet from 'helmet';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   
   // Enable shutdown hooks for graceful exit (e.g. BullMQ, TypeORM)
   app.enableShutdownHooks();
+
+  // Security: Helmet sets various HTTP headers to protect against well known vulnerabilities
+  app.use(helmet({
+    crossOriginEmbedderPolicy: false,
+    contentSecurityPolicy: false,
+  }));
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -40,4 +47,3 @@ async function bootstrap() {
   Logger.log(`Backend is running on http://localhost:${port}`, 'Bootstrap');
 }
 bootstrap();
-

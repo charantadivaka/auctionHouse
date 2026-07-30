@@ -3,6 +3,9 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
 
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
+
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { AuctionsModule } from './auctions/auctions.module';
@@ -12,12 +15,17 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { WatchlistModule } from './watchlist/watchlist.module';
 import { RatingsModule } from './ratings/ratings.module';
 import { AdminModule } from './admin/admin.module';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    ThrottlerModule.forRoot([{
+      ttl: 60000,
+      limit: 100,
+    }]),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -51,6 +59,13 @@ import { AdminModule } from './admin/admin.module';
     WatchlistModule,
     RatingsModule,
     AdminModule,
+    ChatModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
   ],
 })
 export class AppModule {}

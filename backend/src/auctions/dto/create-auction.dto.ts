@@ -11,7 +11,7 @@ import {
   IsBoolean,
   IsUUID,
 } from 'class-validator';
-import { AuctionCondition } from '../auction.entity';
+import { AuctionCondition, AuctionType } from '../auction.entity';
 
 export class CreateAuctionDto {
   @IsString()
@@ -65,4 +65,12 @@ export class CreateAuctionDto {
   @IsString()
   @IsOptional()
   shippingInfo?: string;
+
+  @IsEnum(AuctionType)
+  @IsOptional()
+  auctionType?: AuctionType;
+
+  @IsString()
+  @IsOptional()
+  videoUrl?: string;
 }

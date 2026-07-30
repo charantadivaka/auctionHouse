@@ -52,6 +52,21 @@ export class User {
   @Column({ nullable: true })
   phone: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  resetPasswordToken: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  resetPasswordExpires: Date | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  refreshToken: string | null;
+
+  @Column({ default: 0 })
+  followersCount: number;
+
+  @Column({ default: 0 })
+  followingCount: number;
+
   @Column('decimal', { precision: 3, scale: 2, default: 0 })
   sellerRating: number;
 

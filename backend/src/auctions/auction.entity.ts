@@ -28,6 +28,11 @@ export enum AuctionCondition {
   POOR = 'poor',
 }
 
+export enum AuctionType {
+  TIMED = 'timed',
+  MANUAL = 'manual',
+}
+
 export enum PaymentStatus {
   NONE = 'none',
   PENDING = 'pending',
@@ -82,6 +87,12 @@ export class Auction {
 
   @Column({ default: false })
   isReserveMet: boolean;
+
+  @Column({ type: 'varchar', nullable: true })
+  videoUrl: string | null;
+
+  @Column({ type: 'enum', enum: AuctionType, default: AuctionType.TIMED })
+  auctionType: AuctionType;
 
   @Column({ type: 'enum', enum: AuctionStatus, default: AuctionStatus.ACTIVE })
   status: AuctionStatus;

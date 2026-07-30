@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Patch, Body, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Param, Patch, Body, UseGuards, Query, Post, Delete } from '@nestjs/common';
 import { UsersService, UpdateProfileDto } from './users.service';
 import { User } from './user.entity';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -11,7 +11,6 @@ import { UserRole } from './user.entity';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  // BUG-06: Secured with admin guard + pagination to prevent PII leak & OOM
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @Get()
@@ -29,10 +28,47 @@ export class UsersController {
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string): Promise<User> {
+  async findOne(@Param('id') id: string): Promise<Omit<User, 'password'>> {
     const user = await this.usersService.findOne(id);
-    const { password, ...rest } = user;
-    return rest as User;
+    const { password, refreshToken, resetPasswordToken, resetPasswordExpires, ...rest } = user as any;
+    return rest;
+  }
+
+  @Get(':id/auctions')
+  async getAuctionHistory(
+    @Param('id') id: string,
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '10',
+  ) {
+    return this.usersService.getAuctionHistory(id, parseInt(page, 10), parseInt(limit, 10));
+  }
+
+  @Get(':id/followers')
+  async getFollowers(@Param('id') id: string) {
+    return this.usersService.getFollowers(id);
+  }
+
+  @Get(':id/following')
+  async getFollowing(@Param('id') id: string) {
+    return this.usersService.getFollowing(id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':id/is-following')
+  async isFollowing(@Param('id') id: string, @CurrentUser() user: User) {
+    return { isFollowing: await this.usersService.isFollowing(user.id, id) };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/follow')
+  async follow(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.usersService.followUser(user.id, id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':id/follow')
+  async unfollow(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.usersService.unfollowUser(user.id, id);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -42,7 +78,7 @@ export class UsersController {
     @Body() dto: UpdateProfileDto,
   ) {
     const updated = await this.usersService.updateProfile(user.id, dto);
-    const { password, ...rest } = updated;
+    const { password, refreshToken, resetPasswordToken, ...rest } = updated as any;
     return rest;
   }
 }

@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, Brackets } from 'typeorm';
-import { Auction, AuctionStatus } from './auction.entity';
+import { Auction, AuctionStatus, AuctionType } from './auction.entity';
 import { Bid } from '../bids/bid.entity';
 import { User } from '../users/user.entity';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -76,7 +76,7 @@ export class AuctionsService {
   }
 
   async findAll(query: QueryAuctionDto) {
-    const { search, category, status, condition, minPrice, maxPrice, sort, page = '1', limit = '12' } = query;
+    const { search, seller, category, status, condition, auctionType, minPrice, maxPrice, sort, page = '1', limit = '12' } = query;
     
     const qb = this.auctionsRepository.createQueryBuilder('auction')
       .leftJoinAndSelect('auction.creator', 'creator')
@@ -90,6 +90,10 @@ export class AuctionsService {
       }));
     }
 
+    if (seller) {
+      qb.andWhere('creator.name ILIKE :seller', { seller: `%${seller}%` });
+    }
+
     if (category) {
       qb.andWhere('cat.slug = :category', { category });
     }
@@ -100,6 +104,10 @@ export class AuctionsService {
 
     if (condition) {
       qb.andWhere('auction.condition = :condition', { condition });
+    }
+
+    if (auctionType) {
+      qb.andWhere('auction.auctionType = :auctionType', { auctionType });
     }
 
     if (minPrice) {
@@ -119,6 +127,9 @@ export class AuctionsService {
         break;
       case 'ending_soon':
         qb.orderBy('auction.endTime', 'ASC').andWhere('auction.status = :activeStatus', { activeStatus: AuctionStatus.ACTIVE });
+        break;
+      case 'most_viewed':
+        qb.orderBy('auction.viewCount', 'DESC');
         break;
       case 'newest':
       default:
@@ -369,10 +380,42 @@ export class AuctionsService {
     await this.auctionsRepository.save(auction);
   }
 
+  // Manual auction end — seller triggers this explicitly
+  async manualEndAuction(auctionId: string, userId: string): Promise<Auction> {
+    const auction = await this.findOneInternal(auctionId);
+    if (auction.creator.id !== userId) {
+      throw new ForbiddenException('Only the seller can manually end this auction');
+    }
+    if (auction.auctionType !== AuctionType.MANUAL) {
+      throw new BadRequestException('Only manual auctions can be ended manually');
+    }
+    if (auction.status !== AuctionStatus.ACTIVE) {
+      throw new BadRequestException('Auction is not active');
+    }
+    // Cancel the BullMQ timed job if one exists
+    await this.auctionsQueue.remove(`auction-${auctionId}`).catch(() => null);
+    return this.endAuction(auctionId);
+  }
+
   // FEAT-03: Check if a specific auction is in the user's watchlist
   async isInWatchlist(userId: string, auctionId: string): Promise<boolean> {
     // Delegated to WatchlistService; this is a thin helper used by the controller
     // The actual implementation lives in WatchlistService
     return false; // Overridden by WatchlistService.isWatchlisted
+  }
+
+  async findMine(userId: string, limit: number = 4) {
+    const [items, total] = await this.auctionsRepository.findAndCount({
+      where: { creator: { id: userId } },
+      order: { createdAt: 'DESC' },
+      take: limit,
+      relations: ['creator', 'category']
+    });
+
+    return {
+      data: items,
+      total,
+      limit,
+    };
   }
 }

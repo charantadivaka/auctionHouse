@@ -7,6 +7,7 @@ class SocketManager {
   private static instance: SocketManager;
   private auctionsSocket: Socket | null = null;
   private notificationsSocket: Socket | null = null;
+  private chatSocket: Socket | null = null;
 
   private constructor() {}
 
@@ -41,6 +42,18 @@ class SocketManager {
     return this.notificationsSocket;
   }
 
+  public getChatSocket(): Socket {
+    if (!this.chatSocket) {
+      const token = Cookies.get('token');
+      this.chatSocket = io(`${SOCKET_URL}/chat`, {
+        extraHeaders: {
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+      });
+    }
+    return this.chatSocket;
+  }
+
   public disconnectAll() {
     if (this.auctionsSocket) {
       this.auctionsSocket.disconnect();
@@ -49,6 +62,10 @@ class SocketManager {
     if (this.notificationsSocket) {
       this.notificationsSocket.disconnect();
       this.notificationsSocket = null;
+    }
+    if (this.chatSocket) {
+      this.chatSocket.disconnect();
+      this.chatSocket = null;
     }
   }
 
@@ -75,6 +92,7 @@ export const socketManager = {
   },
   getAuctionsSocket: () => socketManager.instance.getAuctionsSocket(),
   getNotificationsSocket: () => socketManager.instance.getNotificationsSocket(),
+  getChatSocket: () => socketManager.instance.getChatSocket(),
   disconnectAll: () => {
     if (typeof window !== 'undefined' && _socketManager) {
       _socketManager.disconnectAll();

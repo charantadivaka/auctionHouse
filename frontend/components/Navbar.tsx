@@ -2,16 +2,18 @@
 
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
-import { Search, Bell, Menu, X, PlusCircle, LogOut } from 'lucide-react';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Search, Bell, Menu, X, PlusCircle, LogOut, LayoutDashboard, User, Settings, Shield } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 
 export default function Navbar() {
   const { user, logout, unreadCount } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  // BUG-19: Functional search bar state
   const [searchQuery, setSearchQuery] = useState('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,188 +22,194 @@ export default function Navbar() {
     }
   };
 
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const navLinks = [
+    { href: '/', label: 'Browse' },
+  ];
+
   return (
-    <nav className="bg-white shadow-sm sticky top-0 z-50">
+    <nav className="bg-white/95 backdrop-blur-sm border-b border-gray-100 sticky top-0 z-50 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
-          <div className="flex items-center">
-            <Link href="/" className="flex-shrink-0 flex items-center">
-              <span className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+        <div className="flex justify-between items-center h-16">
+          
+          {/* Logo + Nav */}
+          <div className="flex items-center gap-8">
+            <Link href="/" className="flex-shrink-0 flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+                <span className="text-white font-bold text-sm">A</span>
+              </div>
+              <span className="text-xl font-bold gradient-text hidden sm:block">
                 AuctionHouse
               </span>
             </Link>
-            
-            <div className="hidden sm:ml-8 sm:flex sm:space-x-8">
-              <Link href="/" className="text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 border-indigo-500 text-sm font-medium">
-                Browse
-              </Link>
+
+            <div className="hidden md:flex items-center gap-1">
+              {navLinks.map(link => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    pathname === link.href
+                      ? 'bg-indigo-50 text-indigo-700'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  {link.label}
+                </Link>
+              ))}
             </div>
           </div>
 
-          <div className="hidden sm:ml-6 sm:flex sm:items-center sm:space-x-4">
-            {/* BUG-19: Functional search form */}
+          {/* Search + Actions */}
+          <div className="hidden sm:flex items-center gap-3">
             <form onSubmit={handleSearch} className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search auctions..."
-                className="w-64 pl-10 pr-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                className="w-56 pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:border-transparent transition-all"
+                suppressHydrationWarning
               />
-              <button type="submit" className="absolute left-3 top-2.5">
-                <Search className="h-5 w-5 text-gray-400 hover:text-indigo-500 transition-colors" />
-              </button>
             </form>
 
             {user ? (
-              <>
-                <Link href="/auctions/create" className="text-gray-600 hover:text-indigo-600 transition-colors flex items-center gap-1 font-medium">
-                  <PlusCircle className="h-5 w-5" />
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/auctions/create"
+                  className="btn-primary text-xs px-3 py-2"
+                >
+                  <PlusCircle className="h-4 w-4" />
                   <span>Sell</span>
                 </Link>
-                
-                {/* BUG-08: Bell now shows real unread count from AuthContext */}
-                <Link href="/notifications" className="text-gray-500 hover:text-indigo-600 transition-colors p-2 relative">
-                  <Bell className="h-6 w-6" />
+
+                <Link href="/notifications" className="relative p-2 text-gray-500 hover:text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors">
+                  <Bell className="h-5 w-5" />
                   {unreadCount > 0 && (
-                    <span className="absolute top-1 right-1 h-4 w-4 bg-red-500 rounded-full border-2 border-white flex items-center justify-center text-[9px] font-bold text-white">
+                    <span className="absolute top-1 right-1 h-4 w-4 bg-red-500 rounded-full flex items-center justify-center text-[9px] font-bold text-white border border-white">
                       {unreadCount > 9 ? '9+' : unreadCount}
                     </span>
                   )}
                 </Link>
 
-                <div className="relative ml-3 group">
-                  <button className="flex text-sm border-2 border-transparent rounded-full focus:outline-none focus:border-indigo-500 transition">
+                <div className="relative" ref={dropdownRef}>
+                  <button
+                    onClick={() => setIsDropdownOpen(v => !v)}
+                    className="flex items-center gap-2 p-1 rounded-full hover:ring-2 hover:ring-indigo-200 transition-all"
+                  >
                     <img
-                      className="h-8 w-8 rounded-full object-cover bg-gray-100"
-                      src={user.avatarUrl || `https://ui-avatars.com/api/?name=${user.name}&background=random`}
+                      className="h-8 w-8 rounded-full object-cover ring-2 ring-gray-100"
+                      src={user.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=6366f1&color=fff`}
                       alt={user.name}
                     />
                   </button>
-                  
-                  {/* Dropdown */}
-                  <div className="absolute right-0 w-48 mt-2 origin-top-right bg-white rounded-md shadow-lg ring-1 ring-black ring-opacity-5 invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all z-50">
-                    <div className="py-1">
-                      <Link href={`/profile/${user.id}`} className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                        Your Profile
-                      </Link>
-                      <Link href="/dashboard" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                        Dashboard
-                      </Link>
-                      <Link href="/notifications" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                        Notifications {unreadCount > 0 && <span className="ml-1 text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">{unreadCount}</span>}
-                      </Link>
-                      {user.role === 'admin' && (
-                        <Link href="/admin" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                          Admin Panel
+
+                  {isDropdownOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 animate-fade-in z-50">
+                      <div className="px-4 py-2.5 border-b border-gray-100">
+                        <p className="text-sm font-semibold text-gray-900 truncate">{user.name}</p>
+                        <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                      </div>
+                      <div className="py-1">
+                        <Link href={`/profile/${user.id}`} onClick={() => setIsDropdownOpen(false)} className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
+                          <User className="h-4 w-4" /> Profile
                         </Link>
-                      )}
-                      <button
-                        onClick={logout}
-                        className="w-full text-left flex items-center px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
-                      >
-                        <LogOut className="h-4 w-4 mr-2" />
-                        Sign out
-                      </button>
+                        <Link href="/dashboard" onClick={() => setIsDropdownOpen(false)} className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
+                          <LayoutDashboard className="h-4 w-4" /> Dashboard
+                        </Link>
+                        <Link href="/notifications" onClick={() => setIsDropdownOpen(false)} className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
+                          <Bell className="h-4 w-4" /> Notifications
+                          {unreadCount > 0 && <span className="ml-auto badge badge-danger text-[10px]">{unreadCount}</span>}
+                        </Link>
+                        {user.role === 'admin' && (
+                          <Link href="/admin" onClick={() => setIsDropdownOpen(false)} className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
+                            <Shield className="h-4 w-4" /> Admin Panel
+                          </Link>
+                        )}
+                      </div>
+                      <div className="border-t border-gray-100 pt-1">
+                        <button
+                          onClick={() => { setIsDropdownOpen(false); logout(); }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                        >
+                          <LogOut className="h-4 w-4" /> Sign out
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
-              </>
+              </div>
             ) : (
-              <div className="flex space-x-4">
-                <Link href="/login" className="text-gray-600 hover:text-gray-900 px-3 py-2 text-sm font-medium">
+              <div className="flex items-center gap-2">
+                <Link href="/login" className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-indigo-600 transition-colors">
                   Log in
                 </Link>
-                <Link href="/register" className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-full text-sm font-medium transition-colors">
+                <Link href="/register" className="btn-primary text-sm px-4 py-2">
                   Sign up
                 </Link>
               </div>
             )}
           </div>
-          
+
           {/* Mobile menu button */}
-          <div className="flex items-center sm:hidden">
-            <button
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none"
-            >
-              {isMenuOpen ? <X className="block h-6 w-6" /> : <Menu className="block h-6 w-6" />}
-            </button>
-          </div>
+          <button
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            className="sm:hidden p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+          >
+            {isMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
         </div>
       </div>
 
       {/* Mobile menu */}
       {isMenuOpen && (
-        <div className="sm:hidden bg-white border-t border-gray-200">
-          {/* BUG-19: Mobile search */}
-          <div className="px-4 pt-3 pb-2">
+        <div className="sm:hidden bg-white border-t border-gray-100 animate-fade-in">
+          <div className="px-4 py-3">
             <form onSubmit={handleSearch} className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search auctions..."
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                suppressHydrationWarning
               />
-              <button type="submit" className="absolute left-3 top-2.5">
-                <Search className="h-5 w-5 text-gray-400" />
-              </button>
             </form>
           </div>
-          <div className="pt-2 pb-3 space-y-1">
-            <Link href="/" className="bg-indigo-50 border-indigo-500 text-indigo-700 block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-              Browse
-            </Link>
-            {user && (
-              <Link href="/auctions/create" className="border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800 block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                Sell
-              </Link>
+          <div className="px-4 pb-3 space-y-1">
+            <Link href="/" onClick={() => setIsMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">Browse</Link>
+            {user ? (
+              <>
+                <Link href="/auctions/create" onClick={() => setIsMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-indigo-600">+ Sell Item</Link>
+                <Link href="/dashboard" onClick={() => setIsMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">Dashboard</Link>
+                <Link href={`/profile/${user.id}`} onClick={() => setIsMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">Profile</Link>
+                <Link href="/notifications" onClick={() => setIsMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">Notifications {unreadCount > 0 && `(${unreadCount})`}</Link>
+                {user.role === 'admin' && (
+                  <Link href="/admin" onClick={() => setIsMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">Admin Panel</Link>
+                )}
+                <button onClick={() => { setIsMenuOpen(false); logout(); }} className="w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50">Sign out</button>
+              </>
+            ) : (
+              <>
+                <Link href="/login" onClick={() => setIsMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-700">Log in</Link>
+                <Link href="/register" onClick={() => setIsMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-indigo-600">Sign up</Link>
+              </>
             )}
           </div>
-          {user ? (
-            <div className="pt-4 pb-3 border-t border-gray-200">
-              <div className="flex items-center px-4">
-                <div className="flex-shrink-0">
-                  <img
-                    className="h-10 w-10 rounded-full"
-                    src={user.avatarUrl || `https://ui-avatars.com/api/?name=${user.name}&background=random`}
-                    alt=""
-                  />
-                </div>
-                <div className="ml-3">
-                  <div className="text-base font-medium text-gray-800">{user.name}</div>
-                  <div className="text-sm font-medium text-gray-500">{user.email}</div>
-                </div>
-              </div>
-              <div className="mt-3 space-y-1">
-                <Link href="/dashboard" className="block px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100">
-                  Dashboard
-                </Link>
-                <Link href="/notifications" className="block px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100">
-                  Notifications {unreadCount > 0 && <span className="ml-1 text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full">{unreadCount}</span>}
-                </Link>
-                <button
-                  onClick={logout}
-                  className="block w-full text-left px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"
-                >
-                  Sign out
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="pt-4 pb-3 border-t border-gray-200 flex flex-col px-4 space-y-2">
-              <Link href="/login" className="block text-center text-gray-600 font-medium py-2">
-                Log in
-              </Link>
-              <Link href="/register" className="block text-center bg-indigo-600 text-white rounded-md py-2 font-medium">
-                Sign up
-              </Link>
-            </div>
-          )}
         </div>
       )}
     </nav>
   );
 }
-

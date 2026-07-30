@@ -27,6 +27,15 @@ export class AuctionsController {
     return this.auctionsService.findAll(query);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('mine')
+  async findMine(
+    @CurrentUser() user: User,
+    @Query('limit') limit?: string,
+  ) {
+    return this.auctionsService.findMine(user.id, limit ? parseInt(limit, 10) : 4);
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string): Promise<Auction> {
     return this.auctionsService.findOne(id);
@@ -49,5 +58,14 @@ export class AuctionsController {
     @CurrentUser() user: User,
   ): Promise<void> {
     return this.auctionsService.remove(id, user.id, user.role);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/end')
+  async manualEnd(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.auctionsService.manualEndAuction(id, user.id);
   }
 }
