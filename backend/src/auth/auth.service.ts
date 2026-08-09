@@ -14,6 +14,7 @@ import * as crypto from 'crypto';
 import { User } from '../users/user.entity';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { MailService } from '../mail/mail.service';
 
 @Injectable()
 export class AuthService {
@@ -22,6 +23,7 @@ export class AuthService {
     private usersRepository: Repository<User>,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private mailService: MailService,
   ) {}
 
   private generateAccessToken(user: User): string {
@@ -43,7 +45,8 @@ export class AuthService {
 
   private sanitizeUser(user: User) {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password, resetPasswordToken, resetPasswordExpires, refreshToken, ...rest } = user as any;
+    const { password, resetPasswordToken, resetPasswordExpires, refreshToken,
+            emailVerificationToken, emailVerificationExpires, ...rest } = user as any;
     return rest;
   }
 
@@ -54,25 +57,56 @@ export class AuthService {
     }
 
     const hashed = await bcrypt.hash(dto.password, 12);
+
+    // Generate email verification token
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = await bcrypt.hash(rawToken, 10);
+    const tokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
     const user = this.usersRepository.create({
-      name:            dto.name,
-      email:           dto.email,
-      password:        hashed,
-      isEmailVerified: true, // Auto-verified (no email provider configured)
+      name:                    dto.name,
+      email:                   dto.email,
+      password:                hashed,
+      isEmailVerified:         false, // must verify
+      emailVerificationToken:  hashedToken,
+      emailVerificationExpires: tokenExpires,
     });
 
-    const refreshTok = this.generateRefreshToken({ id: 'temp' } as User);
     const savedUser = await this.usersRepository.save(user);
-    const accessToken = this.generateAccessToken(savedUser);
-    const refreshToken = this.generateRefreshToken(savedUser);
-    savedUser.refreshToken = await bcrypt.hash(refreshToken, 10);
-    await this.usersRepository.save(savedUser);
 
+    // Send verification email
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:3000');
+    const verifyLink = `${frontendUrl}/verify-email?token=${rawToken}&email=${encodeURIComponent(dto.email)}`;
+    await this.mailService.sendVerificationEmail(dto.email, verifyLink);
+
+    // Don't return tokens yet — user must verify first
     return {
-      token: accessToken,
-      refreshToken,
-      user: this.sanitizeUser(savedUser),
+      message: 'Registration successful. Please check your email to verify your account.',
+      email: savedUser.email,
     };
+  }
+
+  async verifyEmail(email: string, token: string) {
+    const user = await this.usersRepository.findOneBy({ email });
+    if (!user || !user.emailVerificationToken || !user.emailVerificationExpires) {
+      throw new BadRequestException('Invalid or expired verification link');
+    }
+
+    if (new Date() > user.emailVerificationExpires) {
+      throw new BadRequestException('Verification link has expired. Please register again or request a new link.');
+    }
+
+    const isMatch = await bcrypt.compare(token, user.emailVerificationToken);
+    if (!isMatch) {
+      throw new BadRequestException('Invalid verification token');
+    }
+
+    user.isEmailVerified = true;
+    user.emailVerificationToken = null;
+    user.emailVerificationExpires = null;
+    await this.usersRepository.save(user);
+
+    return { message: 'Email verified successfully. You can now log in.' };
   }
 
   async login(dto: LoginDto) {
@@ -82,6 +116,12 @@ export class AuthService {
     }
     if (!user.isActive) {
       throw new UnauthorizedException('Your account has been suspended');
+    }
+
+    // Gate: existing accounts all have isEmailVerified=true so they pass through.
+    // Only newly registered accounts (isEmailVerified=false) are blocked.
+    if (!user.isEmailVerified) {
+      throw new UnauthorizedException('Please verify your email address before logging in. Check your inbox.');
     }
 
     const valid = await bcrypt.compare(dto.password, user.password);
@@ -114,7 +154,7 @@ export class AuthService {
         name: `${req.user.firstName} ${req.user.lastName}`.trim(),
         email: req.user.email,
         password: await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 12),
-        isEmailVerified: true,
+        isEmailVerified: true, // Google OAuth implies verified email
         avatarUrl: req.user.picture,
       });
       await this.usersRepository.save(user);
@@ -177,8 +217,7 @@ export class AuthService {
     const frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:3000');
     const resetLink = `${frontendUrl}/reset-password?token=${token}&email=${encodeURIComponent(email)}`;
 
-    // Log reset link (replace with actual email sending in production)
-    console.log(`\n[Password Reset] Link for ${email}:\n${resetLink}\n`);
+    await this.mailService.sendPasswordReset(email, resetLink);
 
     return { message: 'If this email exists, a reset link has been sent.' };
   }

@@ -7,6 +7,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { User } from '../users/user.entity';
 import { IsEmail, IsString, MinLength } from 'class-validator';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 
 class ForgotPasswordDto {
   @IsEmail()
@@ -69,6 +70,12 @@ export class AuthController {
   @Post('reset-password')
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto.email, dto.token, dto.newPassword);
+  }
+
+  /** POST /auth/verify-email */
+  @Post('verify-email')
+  verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.authService.verifyEmail(dto.email, dto.token);
   }
 
   @Get('google')

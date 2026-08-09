@@ -5,7 +5,7 @@ import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, Mail, Lock, User, AlertCircle, Gavel, CheckCircle } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, User, AlertCircle, Gavel, CheckCircle, Send } from 'lucide-react';
 
 const passwordStrength = (pw: string) => {
   let strength = 0;
@@ -23,6 +23,8 @@ export default function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [registered, setRegistered] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState('');
   const { login } = useAuth();
   const router = useRouter();
 
@@ -36,14 +38,9 @@ export default function Register() {
     setLoading(true);
 
     try {
-      const res = await api.post('/auth/register', { name, email, password });
-      const Cookies = (await import('js-cookie')).default;
-      Cookies.set('token', res.data.token, { expires: 7 });
-      if (res.data.refreshToken) {
-        Cookies.set('refreshToken', res.data.refreshToken, { expires: 30 });
-      }
-      login(res.data.token, res.data.user);
-      router.push('/dashboard');
+      await api.post('/auth/register', { name, email, password });
+      setRegisteredEmail(email);
+      setRegistered(true);
     } catch (err: any) {
       if (Array.isArray(err.response?.data?.message)) {
         setError(err.response.data.message[0]);
@@ -109,6 +106,38 @@ export default function Register() {
             <span className="text-xl font-bold gradient-text">AuctionHouse</span>
           </Link>
 
+          {registered ? (
+            <div className="text-center animate-fade-in">
+              <div className="w-20 h-20 rounded-full bg-indigo-100 flex items-center justify-center mx-auto mb-6">
+                <Send className="w-10 h-10 text-indigo-600" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-3">Check your inbox</h2>
+              <p className="text-gray-600 mb-2">
+                We&apos;ve sent a verification link to
+              </p>
+              <p className="font-semibold text-indigo-600 mb-6 break-all">{registeredEmail}</p>
+              <p className="text-sm text-gray-500 mb-8">
+                Click the link in the email to activate your account. The link expires in 24 hours.
+              </p>
+              <Link
+                href="/login"
+                className="btn-primary inline-flex items-center gap-2 px-6 py-3"
+              >
+                Go to Login
+              </Link>
+              <p className="mt-6 text-xs text-gray-400">
+                Didn&apos;t receive it? Check your spam folder or{' '}
+                <button
+                  className="text-indigo-600 underline"
+                  onClick={() => setRegistered(false)}
+                >
+                  try again
+                </button>
+                .
+              </p>
+            </div>
+          ) : (
+            <>
           <div className="mb-8">
             <h1 className="text-3xl font-extrabold text-gray-900">Create account</h1>
             <p className="mt-2 text-sm text-gray-600">
@@ -240,6 +269,8 @@ export default function Register() {
             <span className="underline cursor-pointer">Terms of Service</span> and{' '}
             <span className="underline cursor-pointer">Privacy Policy</span>.
           </p>
+          </>
+          )}
         </div>
       </div>
     </div>

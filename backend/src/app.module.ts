@@ -5,6 +5,8 @@ import { BullModule } from '@nestjs/bullmq';
 
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -16,11 +18,17 @@ import { WatchlistModule } from './watchlist/watchlist.module';
 import { RatingsModule } from './ratings/ratings.module';
 import { AdminModule } from './admin/admin.module';
 import { ChatModule } from './chat/chat.module';
+import { MailModule } from './mail/mail.module';
+import { UploadsModule } from './uploads/uploads.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+    }),
+    ServeStaticModule.forRoot({
+      rootPath: join(process.cwd(), 'uploads'),
+      serveRoot: '/uploads',
     }),
     ThrottlerModule.forRoot([{
       ttl: 60000,
@@ -60,6 +68,8 @@ import { ChatModule } from './chat/chat.module';
     RatingsModule,
     AdminModule,
     ChatModule,
+    MailModule,
+    UploadsModule,
   ],
   providers: [
     {

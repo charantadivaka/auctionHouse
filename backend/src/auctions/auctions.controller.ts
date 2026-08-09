@@ -68,4 +68,14 @@ export class AuctionsController {
   ) {
     return this.auctionsService.manualEndAuction(id, user.id);
   }
+
+  /** POST /auctions/:id/pay  — winner confirms payment */
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/pay')
+  async markAsPaid(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.auctionsService.markAsPaid(id, user.id);
+  }
 }

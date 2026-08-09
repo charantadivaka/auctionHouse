@@ -59,6 +59,12 @@ export class User {
   resetPasswordExpires: Date | null;
 
   @Column({ type: 'varchar', nullable: true })
+  emailVerificationToken: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  emailVerificationExpires: Date | null;
+
+  @Column({ type: 'varchar', nullable: true })
   refreshToken: string | null;
 
   @Column({ default: 0 })

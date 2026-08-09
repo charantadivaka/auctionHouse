@@ -9,7 +9,7 @@ import Navbar from '@/components/Navbar';
 import { formatDistanceToNow } from 'date-fns';
 import {
   Clock, ArrowLeft, Heart, ShieldCheck, MapPin, Package,
-  Star, Edit2, Trash2, StopCircle, Send, Video, ChevronLeft, ChevronRight, MessageCircle, X
+  Star, Edit2, Trash2, StopCircle, Send, Video, ChevronLeft, ChevronRight, MessageCircle, X, CreditCard, CheckCircle2, Trophy
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -158,6 +158,7 @@ export default function AuctionDetails() {
   const [deletingAuction, setDeletingAuction] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [paymentLoading, setPaymentLoading] = useState(false);
 
   useEffect(() => {
     const fetch = async () => {
@@ -238,6 +239,18 @@ export default function AuctionDetails() {
       alert(err.response?.data?.message || 'Failed to delete auction');
       setDeletingAuction(false);
       setShowDeleteConfirm(false);
+    }
+  };
+
+  const handleMarkAsPaid = async () => {
+    setPaymentLoading(true);
+    try {
+      const res = await api.post(`/auctions/${id}/pay`);
+      setAuction(res.data);
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to confirm payment');
+    } finally {
+      setPaymentLoading(false);
     }
   };
 
@@ -485,9 +498,43 @@ export default function AuctionDetails() {
               )}
 
               {auction.status === 'sold' && isWinner && (
-                <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center mb-5">
-                  <p className="text-lg font-bold text-green-700">🏆 You Won!</p>
-                  <p className="text-sm text-green-600 mt-1">Congratulations! Contact the seller to arrange payment.</p>
+                <div className="mb-5">
+                  {auction.paymentStatus === 'paid' ? (
+                    <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+                      <div className="flex items-center justify-center gap-2 mb-1">
+                        <CheckCircle2 className="w-5 h-5 text-green-600" />
+                        <p className="text-lg font-bold text-green-700">Payment Confirmed</p>
+                      </div>
+                      <p className="text-sm text-green-600">Thank you! The seller has been notified.</p>
+                    </div>
+                  ) : (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Trophy className="w-5 h-5 text-amber-600" />
+                        <p className="font-bold text-amber-800">🏆 You Won!</p>
+                      </div>
+                      <p className="text-sm text-amber-700 mb-4">
+                        Congratulations! Please confirm your payment to complete the transaction.
+                      </p>
+                      <button
+                        onClick={handleMarkAsPaid}
+                        disabled={paymentLoading}
+                        className="btn-primary w-full flex items-center justify-center gap-2 py-3"
+                      >
+                        {paymentLoading ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            <CreditCard className="w-4 h-4" />
+                            Complete Payment
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 

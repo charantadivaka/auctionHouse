@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
 import Navbar from '@/components/Navbar';
-import { AlertCircle, Save, Plus, X } from 'lucide-react';
+import { AlertCircle, Save, Plus, X, Image as ImageIcon } from 'lucide-react';
 
 export default function EditAuction() {
   const params = useParams();
@@ -14,7 +14,8 @@ export default function EditAuction() {
   const router = useRouter();
 
   const [categories, setCategories] = useState<any[]>([]);
-  const [imageUrls, setImageUrls] = useState<string[]>(['']);
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -59,7 +60,7 @@ export default function EditAuction() {
           shippingInfo: auction.shippingInfo || '',
           videoUrl: auction.videoUrl || '',
         });
-        setImageUrls(auction.images?.length > 0 ? auction.images : ['']);
+        setImageUrls(auction.images?.length > 0 ? auction.images : []);
       } catch (err) {
         setError('Failed to load auction');
       } finally {
@@ -72,6 +73,32 @@ export default function EditAuction() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    if (imageUrls.length >= 5) {
+      setError('Maximum 5 images allowed.');
+      return;
+    }
+
+    setUploadingImage(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await api.post('/uploads/image', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setImageUrls(prev => [...prev, res.data.url]);
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to upload image');
+    } finally {
+      setUploadingImage(false);
+      // clear the input
+      e.target.value = '';
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -175,23 +202,63 @@ export default function EditAuction() {
 
           <div className="card p-6 space-y-5">
             <h2 className="text-base font-bold text-gray-900">Images & Video</h2>
-            <div className="space-y-3">
-              <label className="block text-sm font-medium text-gray-700">Image URLs</label>
-              {imageUrls.map((url, idx) => (
-                <div key={idx} className="flex items-center gap-2">
-                  {url && <img src={url} alt="" className="w-10 h-10 rounded-lg object-cover border border-gray-200 flex-shrink-0" onError={e => { (e.target as any).style.display='none'; }} />}
-                  <input type="url" value={url} onChange={e => { const u = [...imageUrls]; u[idx] = e.target.value; setImageUrls(u); }} placeholder={`Image URL ${idx + 1}`} className="input-field flex-1" />
-                  {imageUrls.length > 1 && (
-                    <button type="button" onClick={() => setImageUrls(imageUrls.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 p-1">
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
+            <div className="space-y-4">
+              <label className="block text-sm font-medium text-gray-700">Images (up to 5)</label>
+              
+              {imageUrls.length > 0 && (
+                <div className="grid grid-cols-5 gap-4">
+                  {imageUrls.map((url, idx) => (
+                    <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 group bg-gray-50">
+                      <img src={url} alt={`Upload ${idx + 1}`} className="w-full h-full object-cover" />
+                      <button 
+                        type="button" 
+                        onClick={() => setImageUrls(imageUrls.filter((_, i) => i !== idx))} 
+                        className="absolute top-1 right-1 bg-white/90 text-red-500 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
+
               {imageUrls.length < 5 && (
-                <button type="button" onClick={() => setImageUrls([...imageUrls, ''])} className="flex items-center gap-1.5 text-sm text-indigo-600 font-medium">
-                  <Plus className="w-4 h-4" /> Add image
-                </button>
+                <div className="flex items-center gap-3">
+                  <label className="flex-1 cursor-pointer">
+                    <div className="flex items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-xl p-6 hover:border-indigo-500 hover:bg-indigo-50 transition-colors">
+                      {uploadingImage ? (
+                        <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <ImageIcon className="w-6 h-6 text-gray-400" />
+                      )}
+                      <span className="text-sm font-medium text-gray-600">
+                        {uploadingImage ? 'Uploading...' : 'Click to upload image'}
+                      </span>
+                    </div>
+                    <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={handleImageUpload} disabled={uploadingImage} />
+                  </label>
+                  
+                  <div className="flex-1">
+                    <p className="text-xs font-semibold text-gray-400 mb-2 px-1 uppercase tracking-wider">Or paste URL</p>
+                    <div className="flex gap-2">
+                      <input 
+                        type="url" 
+                        placeholder="https://..." 
+                        className="input-field"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const val = e.currentTarget.value.trim();
+                            if (val && imageUrls.length < 5) {
+                              setImageUrls(prev => [...prev, val]);
+                              e.currentTarget.value = '';
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
             <div>

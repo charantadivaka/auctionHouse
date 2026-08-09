@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, Brackets } from 'typeorm';
-import { Auction, AuctionStatus, AuctionType } from './auction.entity';
+import { Auction, AuctionStatus, AuctionType, PaymentStatus } from './auction.entity';
 import { Bid } from '../bids/bid.entity';
 import { User } from '../users/user.entity';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -417,5 +417,41 @@ export class AuctionsService {
       total,
       limit,
     };
+  }
+
+  async markAsPaid(auctionId: string, userId: string): Promise<Auction> {
+    const auction = await this.findOneInternal(auctionId);
+
+    if (auction.status !== AuctionStatus.SOLD) {
+      throw new BadRequestException('Only sold auctions can be marked as paid');
+    }
+    if (auction.winnerId !== userId) {
+      throw new ForbiddenException('Only the auction winner can confirm payment');
+    }
+    if (auction.paymentStatus === PaymentStatus.PAID) {
+      throw new BadRequestException('This auction has already been marked as paid');
+    }
+
+    auction.paymentStatus = PaymentStatus.PAID;
+    const saved = await this.auctionsRepository.save(auction);
+
+    // Notify the seller that payment has been confirmed
+    try {
+      await this.notificationsService.create(
+        auction.creator.id,
+        NotificationType.PAYMENT_STATUS,
+        `The winner has confirmed payment for "${auction.title}".`,
+        auction.id,
+      );
+      this.notificationsGateway.sendNotificationToUser(auction.creator.id, {
+        type: NotificationType.PAYMENT_STATUS,
+        message: `The winner has confirmed payment for "${auction.title}".`,
+        auctionId: auction.id,
+      });
+    } catch {
+      // notification failure must never break the payment flow
+    }
+
+    return saved;
   }
 }

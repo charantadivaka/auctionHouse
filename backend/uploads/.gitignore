@@ -1,0 +1,7 @@
+# Uploaded files
+# This directory is served as static files at /uploads/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
