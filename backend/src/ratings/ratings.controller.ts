@@ -20,10 +20,7 @@ export class RatingsController {
 
   @UseGuards(JwtAuthGuard)
   @Post()
-  async createRating(
-    @Body() createRatingDto: CreateRatingDto,
-    @CurrentUser() user: User,
-  ) {
+  async createRating(@Body() createRatingDto: CreateRatingDto, @CurrentUser() user: User) {
     return this.ratingsService.create(user.id, createRatingDto);
   }
 }

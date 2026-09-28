@@ -10,10 +10,7 @@ export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
   @Get()
-  async getMyNotifications(
-    @CurrentUser() user: User,
-    @Query('unreadOnly') unreadOnly?: string,
-  ) {
+  async getMyNotifications(@CurrentUser() user: User, @Query('unreadOnly') unreadOnly?: string) {
     return this.notificationsService.findByUser(user.id, unreadOnly === 'true');
   }
 

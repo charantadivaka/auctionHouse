@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './user.entity';
@@ -33,11 +38,19 @@ export class UsersService {
       skip: (page - 1) * limit,
       take: limit,
       select: {
-        id: true, name: true, email: true, role: true,
-        isActive: true, avatarUrl: true, sellerRating: true,
-        totalRatingsCount: true, totalSales: true,
-        totalPurchases: true, createdAt: true,
-        followersCount: true, followingCount: true,
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+        avatarUrl: true,
+        sellerRating: true,
+        totalRatingsCount: true,
+        totalSales: true,
+        totalPurchases: true,
+        createdAt: true,
+        followersCount: true,
+        followingCount: true,
       },
     });
     return { data: users, total, page, limit, totalPages: Math.ceil(total / limit) };
@@ -53,7 +66,7 @@ export class UsersService {
 
   async updateProfile(id: string, dto: UpdateProfileDto): Promise<User> {
     const user = await this.findOne(id);
-    
+
     if (dto.name !== undefined) user.name = dto.name;
     if (dto.bio !== undefined) user.bio = dto.bio;
     if (dto.location !== undefined) user.location = dto.location;
@@ -151,8 +164,13 @@ export class UsersService {
       where: { following: { id: userId } },
       relations: ['follower'],
     });
-    return follows.map(f => {
-      const { password, refreshToken, resetPasswordToken, ...u } = f.follower as any;
+    return follows.map((f) => {
+      const {
+        password: _pw,
+        refreshToken: _rt,
+        resetPasswordToken: _rpt,
+        ...u
+      } = f.follower as any;
       return u;
     });
   }
@@ -162,8 +180,13 @@ export class UsersService {
       where: { follower: { id: userId } },
       relations: ['following'],
     });
-    return follows.map(f => {
-      const { password, refreshToken, resetPasswordToken, ...u } = f.following as any;
+    return follows.map((f) => {
+      const {
+        password: _pw,
+        refreshToken: _rt,
+        resetPasswordToken: _rpt,
+        ...u
+      } = f.following as any;
       return u;
     });
   }

@@ -1,10 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import {
-  ConflictException,
-  UnauthorizedException,
-  BadRequestException,
-} from '@nestjs/common';
+import { ConflictException, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
@@ -14,37 +10,38 @@ import { MailService } from '../mail/mail.service';
 
 // ─── Mock helpers ─────────────────────────────────────────────────────────────
 
-const makeUser = (overrides: Partial<User> = {}): User => ({
-  id: 'user-1',
-  name: 'Test User',
-  email: 'test@example.com',
-  password: bcrypt.hashSync('Password1!', 10),
-  isEmailVerified: true,
-  isActive: true,
-  role: 'user' as any,
-  refreshToken: null,
-  resetPasswordToken: null,
-  resetPasswordExpires: null,
-  emailVerificationToken: null,
-  emailVerificationExpires: null,
-  auctions: [],
-  bids: [],
-  notifications: [],
-  watchlistItems: [],
-  followersRelations: [],
-  followingRelations: [],
-  sellerRating: 0,
-  totalRatings: 0,
-  avatarUrl: null,
-  bio: null,
-  location: null,
-  totalBids: 0,
-  wonAuctions: 0,
-  listedAuctions: 0,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  ...overrides,
-} as any);
+const makeUser = (overrides: Partial<User> = {}): User =>
+  ({
+    id: 'user-1',
+    name: 'Test User',
+    email: 'test@example.com',
+    password: bcrypt.hashSync('Password1!', 10),
+    isEmailVerified: true,
+    isActive: true,
+    role: 'user' as any,
+    refreshToken: null,
+    resetPasswordToken: null,
+    resetPasswordExpires: null,
+    emailVerificationToken: null,
+    emailVerificationExpires: null,
+    auctions: [],
+    bids: [],
+    notifications: [],
+    watchlistItems: [],
+    followersRelations: [],
+    followingRelations: [],
+    sellerRating: 0,
+    totalRatings: 0,
+    avatarUrl: null,
+    bio: null,
+    location: null,
+    totalBids: 0,
+    wonAuctions: 0,
+    listedAuctions: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  }) as any;
 
 const mockRepo = () => ({
   findOneBy: jest.fn(),

@@ -2,11 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { getQueueToken } from '@nestjs/bullmq';
 import { DataSource } from 'typeorm';
-import {
-  BadRequestException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { AuctionsService } from './auctions.service';
 import { Auction, AuctionStatus, AuctionType, PaymentStatus } from './auction.entity';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -14,37 +10,38 @@ import { NotificationsGateway } from '../notifications/notifications.gateway';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const makeAuction = (overrides: Partial<Auction> = {}): Auction => ({
-  id: 'auction-1',
-  title: 'Test Auction',
-  description: 'Description',
-  images: [],
-  startingPrice: 100,
-  currentPrice: 100,
-  minBidIncrement: 10,
-  reservePrice: null,
-  isReserveMet: false,
-  status: AuctionStatus.ACTIVE,
-  auctionType: AuctionType.TIMED,
-  paymentStatus: PaymentStatus.NONE,
-  startTime: new Date(),
-  endTime: new Date(Date.now() + 3600000),
-  creator: { id: 'seller-1', name: 'Seller' } as any,
-  bids: [],
-  watchlistItems: [],
-  winnerId: null,
-  viewCount: 0,
-  watcherCount: 0,
-  location: null,
-  shippingInfo: null,
-  videoUrl: null,
-  condition: 'good' as any,
-  category: null,
-  categoryId: null,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  ...overrides,
-} as any);
+const makeAuction = (overrides: Partial<Auction> = {}): Auction =>
+  ({
+    id: 'auction-1',
+    title: 'Test Auction',
+    description: 'Description',
+    images: [],
+    startingPrice: 100,
+    currentPrice: 100,
+    minBidIncrement: 10,
+    reservePrice: null,
+    isReserveMet: false,
+    status: AuctionStatus.ACTIVE,
+    auctionType: AuctionType.TIMED,
+    paymentStatus: PaymentStatus.NONE,
+    startTime: new Date(),
+    endTime: new Date(Date.now() + 3600000),
+    creator: { id: 'seller-1', name: 'Seller' } as any,
+    bids: [],
+    watchlistItems: [],
+    winnerId: null,
+    viewCount: 0,
+    watcherCount: 0,
+    location: null,
+    shippingInfo: null,
+    videoUrl: null,
+    condition: 'good' as any,
+    category: null,
+    categoryId: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  }) as any;
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
@@ -158,21 +155,31 @@ describe('AuctionsService', () => {
   describe('markAsPaid()', () => {
     it('should throw BadRequestException if auction is not sold', async () => {
       repo.findOne.mockResolvedValue(makeAuction({ status: AuctionStatus.ACTIVE }));
-      await expect(service.markAsPaid('auction-1', 'winner-1')).rejects.toThrow(BadRequestException);
+      await expect(service.markAsPaid('auction-1', 'winner-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should throw ForbiddenException if caller is not the winner', async () => {
       repo.findOne.mockResolvedValue(
         makeAuction({ status: AuctionStatus.SOLD, winnerId: 'actual-winner' }),
       );
-      await expect(service.markAsPaid('auction-1', 'wrong-user')).rejects.toThrow(ForbiddenException);
+      await expect(service.markAsPaid('auction-1', 'wrong-user')).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('should throw BadRequestException if auction is already paid', async () => {
       repo.findOne.mockResolvedValue(
-        makeAuction({ status: AuctionStatus.SOLD, winnerId: 'winner-1', paymentStatus: PaymentStatus.PAID }),
+        makeAuction({
+          status: AuctionStatus.SOLD,
+          winnerId: 'winner-1',
+          paymentStatus: PaymentStatus.PAID,
+        }),
       );
-      await expect(service.markAsPaid('auction-1', 'winner-1')).rejects.toThrow(BadRequestException);
+      await expect(service.markAsPaid('auction-1', 'winner-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should mark auction as paid for the correct winner', async () => {

@@ -17,7 +17,7 @@ import { MailModule } from '../mail/mail.module';
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
-      inject:  [ConfigService],
+      inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
         const secret = configService.get<string>('JWT_SECRET');
         if (!secret) {
@@ -30,8 +30,8 @@ import { MailModule } from '../mail/mail.module';
       },
     }),
   ],
-  providers:   [AuthService, JwtStrategy, GoogleStrategy],
+  providers: [AuthService, JwtStrategy, GoogleStrategy],
   controllers: [AuthController],
-  exports:     [JwtModule, PassportModule],
+  exports: [JwtModule, PassportModule],
 })
 export class AuthModule {}

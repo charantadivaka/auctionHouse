@@ -46,7 +46,7 @@ export class AuctionsGateway implements OnGatewayConnection, OnGatewayDisconnect
     }
   }
 
-  handleDisconnect(client: Socket) {}
+  handleDisconnect(_client: Socket) {}
 
   @SubscribeMessage('joinAuction')
   handleJoinAuction(@ConnectedSocket() client: Socket, @MessageBody() auctionId: string) {
@@ -70,9 +70,9 @@ export class AuctionsGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     try {
       const updatedAuction = await this.auctionsService.placeBid(
-        data.auctionId, 
+        data.auctionId,
         client.data.user.sub, // Using sub (userId) from JWT, not from client payload
-        data.amount
+        data.amount,
       );
       this.server.to(`auction-${data.auctionId}`).emit('bidPlaced', updatedAuction);
     } catch (error: any) {

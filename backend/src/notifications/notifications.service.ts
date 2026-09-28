@@ -10,7 +10,12 @@ export class NotificationsService {
     private notificationsRepository: Repository<Notification>,
   ) {}
 
-  async create(userId: string, type: NotificationType, message: string, relatedAuctionId?: string): Promise<Notification> {
+  async create(
+    userId: string,
+    type: NotificationType,
+    message: string,
+    relatedAuctionId?: string,
+  ): Promise<Notification> {
     const notification = this.notificationsRepository.create({
       user: { id: userId },
       type,
@@ -35,11 +40,11 @@ export class NotificationsService {
     const notification = await this.notificationsRepository.findOne({
       where: { id, user: { id: userId } },
     });
-    
+
     if (!notification) {
       throw new NotFoundException('Notification not found');
     }
-    
+
     notification.isRead = true;
     await this.notificationsRepository.save(notification);
   }
@@ -47,7 +52,7 @@ export class NotificationsService {
   async markAllAsRead(userId: string): Promise<void> {
     await this.notificationsRepository.update(
       { user: { id: userId }, isRead: false },
-      { isRead: true }
+      { isRead: true },
     );
   }
 }

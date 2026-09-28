@@ -10,11 +10,7 @@ import { NotificationsGateway } from './notifications.gateway';
 
 @Global()
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Notification]),
-    JwtModule,
-    ConfigModule,
-  ],
+  imports: [TypeOrmModule.forFeature([Notification]), JwtModule, ConfigModule],
   providers: [NotificationsService, NotificationsGateway],
   controllers: [NotificationsController],
   exports: [NotificationsService, NotificationsGateway],

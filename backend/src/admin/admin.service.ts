@@ -20,7 +20,7 @@ export class AdminService {
   async getStats() {
     const totalUsers = await this.usersRepository.count();
     const totalAuctions = await this.auctionsRepository.count();
-    
+
     const activeAuctions = await this.auctionsRepository.count({
       where: { status: AuctionStatus.ACTIVE },
     });
@@ -78,11 +78,12 @@ export class AdminService {
     const user = await this.usersRepository.findOneBy({ id: userId });
     if (!user) throw new NotFoundException('User not found');
     // BUG-18: Use ForbiddenException (user exists, operation is not permitted)
-    if (user.role === UserRole.ADMIN) throw new ForbiddenException('Cannot change status of admin users');
+    if (user.role === UserRole.ADMIN)
+      throw new ForbiddenException('Cannot change status of admin users');
 
     user.isActive = !user.isActive;
     await this.usersRepository.save(user);
-    
+
     return { isActive: user.isActive };
   }
 

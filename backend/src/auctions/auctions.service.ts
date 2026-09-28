@@ -1,9 +1,14 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, Brackets } from 'typeorm';
 import { Auction, AuctionStatus, AuctionType, PaymentStatus } from './auction.entity';
 import { Bid } from '../bids/bid.entity';
-import { User } from '../users/user.entity';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { CreateAuctionDto } from './dto/create-auction.dto';
@@ -30,7 +35,9 @@ export class AuctionsService {
       throw new BadRequestException('End time must be in the future');
     }
 
-    const startTimeDate = createAuctionDto.startTime ? new Date(createAuctionDto.startTime) : new Date();
+    const startTimeDate = createAuctionDto.startTime
+      ? new Date(createAuctionDto.startTime)
+      : new Date();
     if (startTimeDate >= endTimeDate) {
       throw new BadRequestException('Start time must be before end time');
     }
@@ -43,7 +50,7 @@ export class AuctionsService {
       creator: { id: creatorId },
       status: startTimeDate > new Date() ? AuctionStatus.PENDING : AuctionStatus.ACTIVE,
     });
-    
+
     if (createAuctionDto.categoryId) {
       auction.category = { id: createAuctionDto.categoryId } as any;
     }
@@ -76,18 +83,35 @@ export class AuctionsService {
   }
 
   async findAll(query: QueryAuctionDto) {
-    const { search, seller, category, status, condition, auctionType, minPrice, maxPrice, sort, page = '1', limit = '12' } = query;
-    
-    const qb = this.auctionsRepository.createQueryBuilder('auction')
+    const {
+      search,
+      seller,
+      category,
+      status,
+      condition,
+      auctionType,
+      minPrice,
+      maxPrice,
+      sort,
+      page = '1',
+      limit = '12',
+    } = query;
+
+    const qb = this.auctionsRepository
+      .createQueryBuilder('auction')
       .leftJoinAndSelect('auction.creator', 'creator')
       .leftJoinAndSelect('auction.category', 'cat')
       .loadRelationCountAndMap('auction.bidsCount', 'auction.bids');
 
     if (search) {
-      qb.andWhere(new Brackets(cb => {
-        cb.where('auction.title ILIKE :search', { search: `%${search}%` })
-          .orWhere('auction.description ILIKE :search', { search: `%${search}%` });
-      }));
+      qb.andWhere(
+        new Brackets((cb) => {
+          cb.where('auction.title ILIKE :search', { search: `%${search}%` }).orWhere(
+            'auction.description ILIKE :search',
+            { search: `%${search}%` },
+          );
+        }),
+      );
     }
 
     if (seller) {
@@ -126,7 +150,9 @@ export class AuctionsService {
         qb.orderBy('auction.currentPrice', 'DESC');
         break;
       case 'ending_soon':
-        qb.orderBy('auction.endTime', 'ASC').andWhere('auction.status = :activeStatus', { activeStatus: AuctionStatus.ACTIVE });
+        qb.orderBy('auction.endTime', 'ASC').andWhere('auction.status = :activeStatus', {
+          activeStatus: AuctionStatus.ACTIVE,
+        });
         break;
       case 'most_viewed':
         qb.orderBy('auction.viewCount', 'DESC');
@@ -175,27 +201,33 @@ export class AuctionsService {
   async update(id: string, updateDto: UpdateAuctionDto, userId: string): Promise<Auction> {
     // BUG-09: Use findOneInternal so update doesn't inflate viewCount
     const auction = await this.findOneInternal(id);
-    
+
     if (auction.creator.id !== userId) {
       throw new ForbiddenException('You can only edit your own auctions');
     }
-    
+
     if (auction.status !== AuctionStatus.PENDING && auction.status !== AuctionStatus.ACTIVE) {
       throw new BadRequestException('Cannot edit an auction that has ended');
     }
 
     // BUG-09: Only apply safe, whitelisted fields — never allow currentPrice/status/winnerId
     const safeFields: (keyof UpdateAuctionDto)[] = [
-      'title', 'description', 'images', 'condition',
-      'minBidIncrement', 'reservePrice', 'endTime',
-      'location', 'shippingInfo',
+      'title',
+      'description',
+      'images',
+      'condition',
+      'minBidIncrement',
+      'reservePrice',
+      'endTime',
+      'location',
+      'shippingInfo',
     ];
     for (const field of safeFields) {
       if (updateDto[field] !== undefined) {
         (auction as any)[field] = updateDto[field];
       }
     }
-    
+
     if (updateDto.categoryId) {
       auction.category = { id: updateDto.categoryId } as any;
     }
@@ -206,11 +238,11 @@ export class AuctionsService {
   async remove(id: string, userId: string, userRole: string): Promise<void> {
     // BUG-02: Use internal to avoid viewCount side effect on delete
     const auction = await this.findOneInternal(id);
-    
+
     if (auction.creator.id !== userId && userRole !== 'admin') {
       throw new ForbiddenException('You can only delete your own auctions');
     }
-    
+
     await this.auctionsQueue.remove(`auction-${id}`).catch(() => null);
     await this.auctionsRepository.remove(auction);
   }
@@ -226,19 +258,23 @@ export class AuctionsService {
       const auction = await queryRunner.manager.findOne(Auction, {
         where: { id: auctionId },
         lock: { mode: 'pessimistic_write' },
-        relations: ['bids', 'bids.bidder', 'creator'], 
+        relations: ['bids', 'bids.bidder', 'creator'],
       });
 
       if (!auction) throw new NotFoundException('Auction not found');
-      if (auction.status !== AuctionStatus.ACTIVE) throw new BadRequestException('Auction is not active');
-      if (auction.creator.id === bidderId) throw new BadRequestException('You cannot bid on your own auction');
+      if (auction.status !== AuctionStatus.ACTIVE)
+        throw new BadRequestException('Auction is not active');
+      if (auction.creator.id === bidderId)
+        throw new BadRequestException('You cannot bid on your own auction');
 
       auctionTitle = auction.title;
 
       const currentPriceNum = Number(auction.currentPrice);
-      const minBid = currentPriceNum === Number(auction.startingPrice) && (!auction.bids || auction.bids.length === 0) 
-        ? currentPriceNum 
-        : currentPriceNum + Number(auction.minBidIncrement);
+      const minBid =
+        currentPriceNum === Number(auction.startingPrice) &&
+        (!auction.bids || auction.bids.length === 0)
+          ? currentPriceNum
+          : currentPriceNum + Number(auction.minBidIncrement);
 
       if (amount < minBid) {
         throw new BadRequestException(`Bid must be at least $${minBid.toFixed(2)}`);
@@ -248,7 +284,7 @@ export class AuctionsService {
       if (auction.bids && auction.bids.length > 0) {
         const highestBid = auction.bids.reduce(
           (max, b) => (Number(b.amount) > Number(max.amount) ? b : max),
-          auction.bids[0]
+          auction.bids[0],
         );
         if (highestBid.bidder.id !== bidderId) {
           outbidUserId = highestBid.bidder.id;
@@ -274,11 +310,13 @@ export class AuctionsService {
         // BUG-17: Always use the same job ID so repeated anti-snipe extensions
         // correctly remove the previous job before scheduling a new one.
         await this.auctionsQueue.remove(`auction-${auctionId}`).catch(() => null);
-        await this.auctionsQueue.add(
-          'endAuction',
-          { auctionId: auction.id },
-          { delay: 30_000, jobId: `auction-${auction.id}` },
-        ).catch(e => new Logger(AuctionsService.name).error('Failed to add extended job:', e));
+        await this.auctionsQueue
+          .add(
+            'endAuction',
+            { auctionId: auction.id },
+            { delay: 30_000, jobId: `auction-${auction.id}` },
+          )
+          .catch((e) => new Logger(AuctionsService.name).error('Failed to add extended job:', e));
       }
 
       await queryRunner.manager.save(Auction, auction);
@@ -296,7 +334,7 @@ export class AuctionsService {
         outbidUserId,
         NotificationType.OUTBID,
         `You have been outbid on "${auctionTitle}".`,
-        auctionId
+        auctionId,
       );
       this.notificationsGateway.sendNotificationToUser(outbidUserId, notif);
     }
@@ -313,7 +351,8 @@ export class AuctionsService {
 
     if (!auction) throw new NotFoundException('Auction not found');
     // Allow ending PENDING auctions too (edge case: very short start→end window)
-    if (auction.status !== AuctionStatus.ACTIVE && auction.status !== AuctionStatus.PENDING) return auction;
+    if (auction.status !== AuctionStatus.ACTIVE && auction.status !== AuctionStatus.PENDING)
+      return auction;
 
     let winnerId: string | null = null;
     let winnerAmount = 0;
@@ -323,7 +362,7 @@ export class AuctionsService {
         (max, bid) => (Number(bid.amount) > Number(max.amount) ? bid : max),
         auction.bids[0],
       );
-      
+
       if (auction.reservePrice && Number(highestBid.amount) < Number(auction.reservePrice)) {
         auction.status = AuctionStatus.CANCELLED;
       } else {
@@ -331,7 +370,7 @@ export class AuctionsService {
         auction.winnerId = highestBid.bidder.id;
         winnerId = highestBid.bidder.id;
         winnerAmount = highestBid.amount;
-        
+
         highestBid.isWinningBid = true;
         await this.dataSource.getRepository(Bid).save(highestBid);
       }
@@ -347,7 +386,7 @@ export class AuctionsService {
         winnerId,
         NotificationType.AUCTION_WON,
         `Congratulations! You won "${auction.title}" for $${winnerAmount}.`,
-        auction.id
+        auction.id,
       );
       this.notificationsGateway.sendNotificationToUser(winnerId, notifWinner);
 
@@ -355,7 +394,7 @@ export class AuctionsService {
         auction.creator.id,
         NotificationType.AUCTION_WON,
         `Your item "${auction.title}" has sold to a bidder for $${winnerAmount}.`,
-        auction.id
+        auction.id,
       );
       this.notificationsGateway.sendNotificationToUser(auction.creator.id, notifSeller);
     } else if (auction.status === AuctionStatus.CANCELLED) {
@@ -363,7 +402,7 @@ export class AuctionsService {
         auction.creator.id,
         NotificationType.AUCTION_ENDING, // Re-using type for ended
         `Your auction "${auction.title}" ended without a winner.`,
-        auction.id
+        auction.id,
       );
       this.notificationsGateway.sendNotificationToUser(auction.creator.id, notifSeller);
     }
@@ -398,7 +437,7 @@ export class AuctionsService {
   }
 
   // FEAT-03: Check if a specific auction is in the user's watchlist
-  async isInWatchlist(userId: string, auctionId: string): Promise<boolean> {
+  async isInWatchlist(_userId: string, _auctionId: string): Promise<boolean> {
     // Delegated to WatchlistService; this is a thin helper used by the controller
     // The actual implementation lives in WatchlistService
     return false; // Overridden by WatchlistService.isWatchlisted
@@ -409,7 +448,7 @@ export class AuctionsService {
       where: { creator: { id: userId } },
       order: { createdAt: 'DESC' },
       take: limit,
-      relations: ['creator', 'category']
+      relations: ['creator', 'category'],
     });
 
     return {

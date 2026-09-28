@@ -1,4 +1,14 @@
-import { Controller, Get, Param, Patch, Body, UseGuards, Query, Post, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Body,
+  UseGuards,
+  Query,
+  Post,
+  Delete,
+} from '@nestjs/common';
 import { UsersService, UpdateProfileDto } from './users.service';
 import { User } from './user.entity';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -14,10 +24,7 @@ export class UsersController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @Get()
-  async findAll(
-    @Query('page') page: string = '1',
-    @Query('limit') limit: string = '20',
-  ) {
+  async findAll(@Query('page') page: string = '1', @Query('limit') limit: string = '20') {
     return this.usersService.findAll(parseInt(page, 10), parseInt(limit, 10));
   }
 
@@ -30,7 +37,13 @@ export class UsersController {
   @Get(':id')
   async findOne(@Param('id') id: string): Promise<Omit<User, 'password'>> {
     const user = await this.usersService.findOne(id);
-    const { password, refreshToken, resetPasswordToken, resetPasswordExpires, ...rest } = user as any;
+    const {
+      password: _pw,
+      refreshToken: _rt,
+      resetPasswordToken: _rpt,
+      resetPasswordExpires: _rpe,
+      ...rest
+    } = user as any;
     return rest;
   }
 
@@ -73,12 +86,9 @@ export class UsersController {
 
   @UseGuards(JwtAuthGuard)
   @Patch('me')
-  async updateProfile(
-    @CurrentUser() user: User,
-    @Body() dto: UpdateProfileDto,
-  ) {
+  async updateProfile(@CurrentUser() user: User, @Body() dto: UpdateProfileDto) {
     const updated = await this.usersService.updateProfile(user.id, dto);
-    const { password, refreshToken, resetPasswordToken, ...rest } = updated as any;
+    const { password: _pw, refreshToken: _rt, resetPasswordToken: _rpt, ...rest } = updated as any;
     return rest;
   }
 }

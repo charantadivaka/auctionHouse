@@ -24,7 +24,7 @@ export class MailService {
     } else {
       this.logger.warn(
         'SMTP credentials not set — emails will be logged to the console. ' +
-        'Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS in .env to enable real sending.',
+          'Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS in .env to enable real sending.',
       );
     }
   }
@@ -37,9 +37,9 @@ export class MailService {
       // Dev fallback — pretty-print to console instead of sending
       this.logger.log(
         `\n📧  [EMAIL FALLBACK]\n` +
-        `  To      : ${options.to}\n` +
-        `  Subject : ${options.subject}\n` +
-        `  Body    :\n${options.text ?? options.html}\n`,
+          `  To      : ${options.to}\n` +
+          `  Subject : ${options.subject}\n` +
+          `  Body    :\n${options.text ?? options.html}\n`,
       );
       return;
     }

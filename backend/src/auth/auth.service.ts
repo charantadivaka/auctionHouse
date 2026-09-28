@@ -37,7 +37,9 @@ export class AuthService {
     return this.jwtService.sign(
       { sub: user.id, type: 'refresh' },
       {
-        secret: this.configService.get<string>('JWT_REFRESH_SECRET') || this.configService.get<string>('JWT_SECRET'),
+        secret:
+          this.configService.get<string>('JWT_REFRESH_SECRET') ||
+          this.configService.get<string>('JWT_SECRET'),
         expiresIn: '30d',
       },
     );
@@ -45,8 +47,15 @@ export class AuthService {
 
   private sanitizeUser(user: User) {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password, resetPasswordToken, resetPasswordExpires, refreshToken,
-            emailVerificationToken, emailVerificationExpires, ...rest } = user as any;
+    const {
+      password: _password,
+      resetPasswordToken: _resetPasswordToken,
+      resetPasswordExpires: _resetPasswordExpires,
+      refreshToken: _refreshToken,
+      emailVerificationToken: _emailVerificationToken,
+      emailVerificationExpires: _emailVerificationExpires,
+      ...rest
+    } = user as any;
     return rest;
   }
 
@@ -64,11 +73,11 @@ export class AuthService {
     const tokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
     const user = this.usersRepository.create({
-      name:                    dto.name,
-      email:                   dto.email,
-      password:                hashed,
-      isEmailVerified:         false, // must verify
-      emailVerificationToken:  hashedToken,
+      name: dto.name,
+      email: dto.email,
+      password: hashed,
+      isEmailVerified: false, // must verify
+      emailVerificationToken: hashedToken,
       emailVerificationExpires: tokenExpires,
     });
 
@@ -93,7 +102,9 @@ export class AuthService {
     }
 
     if (new Date() > user.emailVerificationExpires) {
-      throw new BadRequestException('Verification link has expired. Please register again or request a new link.');
+      throw new BadRequestException(
+        'Verification link has expired. Please register again or request a new link.',
+      );
     }
 
     const isMatch = await bcrypt.compare(token, user.emailVerificationToken);
@@ -121,7 +132,9 @@ export class AuthService {
     // Gate: existing accounts all have isEmailVerified=true so they pass through.
     // Only newly registered accounts (isEmailVerified=false) are blocked.
     if (!user.isEmailVerified) {
-      throw new UnauthorizedException('Please verify your email address before logging in. Check your inbox.');
+      throw new UnauthorizedException(
+        'Please verify your email address before logging in. Check your inbox.',
+      );
     }
 
     const valid = await bcrypt.compare(dto.password, user.password);
@@ -179,7 +192,9 @@ export class AuthService {
   async refreshTokens(refreshToken: string) {
     try {
       const payload = this.jwtService.verify(refreshToken, {
-        secret: this.configService.get<string>('JWT_REFRESH_SECRET') || this.configService.get<string>('JWT_SECRET'),
+        secret:
+          this.configService.get<string>('JWT_REFRESH_SECRET') ||
+          this.configService.get<string>('JWT_SECRET'),
       });
       const user = await this.usersRepository.findOneBy({ id: payload.sub });
       if (!user || !user.refreshToken) throw new UnauthorizedException();

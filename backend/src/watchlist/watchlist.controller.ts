@@ -37,4 +37,3 @@ export class WatchlistController {
     return { success: true };
   }
 }
-

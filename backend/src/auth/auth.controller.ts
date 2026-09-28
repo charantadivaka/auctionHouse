@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, UseGuards, Param, Req, Res } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Req, Res } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -80,13 +80,13 @@ export class AuthController {
 
   @Get('google')
   @UseGuards(AuthGuard('google'))
-  async googleAuth(@Req() req) {}
+  async googleAuth(@Req() _req) {}
 
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   async googleAuthRedirect(@Req() req, @Res() res) {
-    const { token, refreshToken, user } = await this.authService.googleLogin(req);
-    
+    const { token, refreshToken } = await this.authService.googleLogin(req);
+
     // Construct redirect URL to frontend with tokens as query params
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     res.redirect(`${frontendUrl}/auth/callback?token=${token}&refreshToken=${refreshToken}`);

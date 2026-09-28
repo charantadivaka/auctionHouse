@@ -1,4 +1,10 @@
-import { Injectable, ConflictException, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Rating } from './rating.entity';
@@ -28,8 +34,10 @@ export class RatingsService {
     });
 
     if (!auction) throw new NotFoundException('Auction not found');
-    if (auction.status !== AuctionStatus.SOLD) throw new BadRequestException('Auction is not sold yet');
-    if (auction.winnerId !== reviewerId) throw new ForbiddenException('Only the winner can review the seller for this auction');
+    if (auction.status !== AuctionStatus.SOLD)
+      throw new BadRequestException('Auction is not sold yet');
+    if (auction.winnerId !== reviewerId)
+      throw new ForbiddenException('Only the winner can review the seller for this auction');
     if (auction.creator.id !== dto.sellerId) throw new BadRequestException('Seller ID mismatch');
 
     const existing = await this.ratingsRepository.findOne({
@@ -53,7 +61,9 @@ export class RatingsService {
     // Update seller's average rating
     const seller = await this.usersRepository.findOneBy({ id: dto.sellerId });
     if (seller) {
-      const allRatings = await this.ratingsRepository.find({ where: { seller: { id: dto.sellerId } } });
+      const allRatings = await this.ratingsRepository.find({
+        where: { seller: { id: dto.sellerId } },
+      });
       const sum = allRatings.reduce((acc, r) => acc + r.stars, 0);
       seller.totalRatingsCount = allRatings.length;
       seller.sellerRating = sum / allRatings.length;
@@ -73,7 +83,7 @@ export class RatingsService {
     });
 
     return {
-      data: ratings.map(r => ({
+      data: ratings.map((r) => ({
         ...r,
         reviewer: { id: r.reviewer.id, name: r.reviewer.name },
       })),

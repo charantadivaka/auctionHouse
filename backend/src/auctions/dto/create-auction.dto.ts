@@ -8,7 +8,6 @@ import {
   IsOptional,
   IsArray,
   IsEnum,
-  IsBoolean,
   IsUUID,
 } from 'class-validator';
 import { AuctionCondition, AuctionType } from '../auction.entity';

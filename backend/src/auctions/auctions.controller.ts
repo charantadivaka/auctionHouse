@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Body, Param, Patch, Delete, UseGuards, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Patch,
+  Delete,
+  UseGuards,
+  Query,
+} from '@nestjs/common';
 import { AuctionsService } from './auctions.service';
 import { CreateAuctionDto } from './dto/create-auction.dto';
 import { UpdateAuctionDto } from './dto/update-auction.dto';
@@ -29,10 +39,7 @@ export class AuctionsController {
 
   @UseGuards(JwtAuthGuard)
   @Get('mine')
-  async findMine(
-    @CurrentUser() user: User,
-    @Query('limit') limit?: string,
-  ) {
+  async findMine(@CurrentUser() user: User, @Query('limit') limit?: string) {
     return this.auctionsService.findMine(user.id, limit ? parseInt(limit, 10) : 4);
   }
 
@@ -53,29 +60,20 @@ export class AuctionsController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Delete(':id')
-  async remove(
-    @Param('id') id: string,
-    @CurrentUser() user: User,
-  ): Promise<void> {
+  async remove(@Param('id') id: string, @CurrentUser() user: User): Promise<void> {
     return this.auctionsService.remove(id, user.id, user.role);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post(':id/end')
-  async manualEnd(
-    @Param('id') id: string,
-    @CurrentUser() user: User,
-  ) {
+  async manualEnd(@Param('id') id: string, @CurrentUser() user: User) {
     return this.auctionsService.manualEndAuction(id, user.id);
   }
 
   /** POST /auctions/:id/pay  — winner confirms payment */
   @UseGuards(JwtAuthGuard)
   @Post(':id/pay')
-  async markAsPaid(
-    @Param('id') id: string,
-    @CurrentUser() user: User,
-  ) {
+  async markAsPaid(@Param('id') id: string, @CurrentUser() user: User) {
     return this.auctionsService.markAsPaid(id, user.id);
   }
 }

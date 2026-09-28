@@ -77,7 +77,7 @@ export class WatchlistService {
     });
 
     return {
-      data: items.map(i => i.auction),
+      data: items.map((i) => i.auction),
       total,
       page,
       limit,

@@ -8,10 +8,7 @@ export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
   @Get(':auctionId')
-  async getMessages(
-    @Param('auctionId') auctionId: string,
-    @Query('limit') limit: string = '50',
-  ) {
+  async getMessages(@Param('auctionId') auctionId: string, @Query('limit') limit: string = '50') {
     return this.chatService.getMessages(auctionId, parseInt(limit, 10));
   }
 }
