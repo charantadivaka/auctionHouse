@@ -32,7 +32,14 @@ export class UploadsController {
       storage: diskStorage({
         destination: join(process.cwd(), 'uploads'),
         filename: (_req, file, cb) => {
-          const ext = extname(file.originalname).toLowerCase();
+          // BUG FIX: Generate extension from mimetype instead of originalname to prevent XSS/spoofing
+          const mimeToExt: Record<string, string> = {
+            'image/jpeg': '.jpg',
+            'image/png': '.png',
+            'image/webp': '.webp',
+            'image/gif': '.gif',
+          };
+          const ext = mimeToExt[file.mimetype] || '.bin';
           cb(null, `${uuidv4()}${ext}`);
         },
       }),

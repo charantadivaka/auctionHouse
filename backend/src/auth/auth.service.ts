@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
   NotFoundException,
   BadRequestException,
+  Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -11,6 +12,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
+import { Redis } from 'ioredis';
 import { User } from '../users/user.entity';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -24,6 +26,7 @@ export class AuthService {
     private jwtService: JwtService,
     private configService: ConfigService,
     private mailService: MailService,
+    @Inject('REDIS_CLIENT') private readonly redis: Redis,
   ) {}
 
   private generateAccessToken(user: User): string {
@@ -141,6 +144,50 @@ export class AuthService {
     if (!valid) {
       throw new UnauthorizedException('Invalid credentials');
     }
+
+    // Generate a 6-digit OTP and store it in Redis for 5 minutes
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpKey = `otp:${user.email}`;
+    const attemptsKey = `otp_attempts:${user.email}`;
+
+    await this.redis.set(otpKey, otp, 'EX', 300); // 5 min TTL
+    await this.redis.set(attemptsKey, '0', 'EX', 300);
+
+    await this.mailService.sendOtp(user.email, otp);
+
+    return {
+      requiresOtp: true,
+      message: 'A 6-digit verification code has been sent to your email.',
+      email: user.email,
+    };
+  }
+
+  async verifyOtp(email: string, otp: string) {
+    const otpKey = `otp:${email}`;
+    const attemptsKey = `otp_attempts:${email}`;
+
+    const storedOtp = await this.redis.get(otpKey);
+    if (!storedOtp) {
+      throw new BadRequestException('OTP has expired. Please log in again to get a new code.');
+    }
+
+    // Track failed attempts (max 5 before invalidating)
+    const attempts = parseInt((await this.redis.get(attemptsKey)) ?? '0', 10);
+    if (attempts >= 5) {
+      await this.redis.del(otpKey, attemptsKey);
+      throw new BadRequestException('Too many failed attempts. Please log in again.');
+    }
+
+    if (storedOtp !== otp) {
+      await this.redis.incr(attemptsKey);
+      throw new UnauthorizedException('Incorrect verification code. Please try again.');
+    }
+
+    // OTP is valid — clean up Redis keys
+    await this.redis.del(otpKey, attemptsKey);
+
+    const user = await this.usersRepository.findOneBy({ email });
+    if (!user) throw new NotFoundException('User not found');
 
     const accessToken = this.generateAccessToken(user);
     const refreshToken = this.generateRefreshToken(user);

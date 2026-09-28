@@ -71,18 +71,18 @@ export default function Dashboard() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Welcome header */}
         <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 min-w-0">
             <img
               src={user.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=6366f1&color=fff&size=64`}
               alt={user.name}
-              className="w-14 h-14 rounded-2xl object-cover border-2 border-white shadow-md"
+              className="w-14 h-14 rounded-2xl object-cover border-2 border-white shadow-md flex-shrink-0"
             />
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Welcome back, {user.name.split(' ')[0]}! 👋</h1>
+            <div className="min-w-0">
+              <h1 className="text-2xl font-bold text-gray-900 truncate">Welcome back, {user.name.split(' ')[0]}! 👋</h1>
               <p className="text-gray-500 text-sm mt-0.5">Here's what's happening with your account.</p>
             </div>
           </div>
-          <Link href="/auctions/create" className="btn-primary text-sm">
+          <Link href="/auctions/create" className="btn-primary text-sm flex-shrink-0">
             <PlusCircle className="w-4 h-4" /> New Listing
           </Link>
         </div>
@@ -115,12 +115,12 @@ export default function Dashboard() {
             ) : (
               <ul className="divide-y divide-gray-100">
                 {myBids.map(bid => (
-                  <li key={bid.id} className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                    <div className="flex-1 min-w-0 mr-4">
-                      <Link href={`/auctions/${bid.auction.id}`} className="font-medium text-gray-900 hover:text-indigo-600 transition-colors text-sm line-clamp-1">
+                  <li key={bid.id} className="px-6 py-4 flex items-center gap-3 hover:bg-gray-50 transition-colors">
+                    <div className="flex-1 min-w-0">
+                      <Link href={`/auctions/${bid.auction.id}`} className="block font-medium text-gray-900 hover:text-indigo-600 transition-colors text-sm truncate">
                         {bid.auction.title}
                       </Link>
-                      <p className="text-xs text-gray-400 mt-0.5">
+                      <p className="text-xs text-gray-400 mt-0.5 truncate">
                         ${Number(bid.amount).toFixed(2)} · {new Date(bid.createdAt).toLocaleDateString()}
                       </p>
                     </div>
@@ -148,17 +148,17 @@ export default function Dashboard() {
               <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
                 <Star className="w-4 h-4 text-yellow-500" /> Seller Profile
               </h2>
-              <div className="flex items-center gap-3 mb-4">
+              <div className="flex items-center gap-3 mb-4 min-w-0">
                 <img
                   src={user.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=6366f1&color=fff`}
-                  className="w-12 h-12 rounded-xl object-cover"
+                  className="w-12 h-12 rounded-xl object-cover flex-shrink-0"
                   alt={user.name}
                 />
-                <div>
-                  <p className="font-semibold text-gray-900 text-sm">{user.name}</p>
+                <div className="min-w-0">
+                  <p className="font-semibold text-gray-900 text-sm truncate">{user.name}</p>
                   <div className="flex items-center gap-1 mt-0.5">
                     {[1,2,3,4,5].map(i => (
-                      <Star key={i} className={`w-3.5 h-3.5 ${i <= Math.round(Number(stats?.sellerRating || 0)) ? 'text-yellow-400 fill-yellow-400' : 'text-gray-200 fill-gray-200'}`} />
+                      <Star key={i} className={`w-3.5 h-3.5 flex-shrink-0 ${i <= Math.round(Number(stats?.sellerRating || 0)) ? 'text-yellow-400 fill-yellow-400' : 'text-gray-200 fill-gray-200'}`} />
                     ))}
                     <span className="text-xs text-gray-400 ml-1">({stats?.totalRatingsCount || 0})</span>
                   </div>

@@ -57,14 +57,16 @@ export class AuctionsService {
 
     const savedAuction = await this.auctionsRepository.save(auction);
 
-    // Schedule endAuction job
-    const delay = savedAuction.endTime.getTime() - Date.now();
-    if (delay > 0) {
-      await this.auctionsQueue.add(
-        'endAuction',
-        { auctionId: savedAuction.id },
-        { delay, jobId: `auction-${savedAuction.id}` },
-      );
+    // Schedule endAuction job (skip for manual auctions to avoid ghost jobs)
+    if (savedAuction.auctionType !== AuctionType.MANUAL) {
+      const delay = savedAuction.endTime.getTime() - Date.now();
+      if (delay > 0) {
+        await this.auctionsQueue.add(
+          'endAuction',
+          { auctionId: savedAuction.id },
+          { delay, jobId: `auction-${savedAuction.id}` },
+        );
+      }
     }
 
     // FEAT-01: If the auction is PENDING (future startTime), schedule activation job
@@ -191,10 +193,15 @@ export class AuctionsService {
   }
 
   // Public fetch — increments viewCount. Use only for user-facing GET requests.
-  async findOne(id: string): Promise<Auction> {
+  async findOne(id: string, viewerId?: string): Promise<Auction> {
     const auction = await this.findOneInternal(id);
-    await this.auctionsRepository.increment({ id }, 'viewCount', 1);
-    auction.viewCount += 1; // reflect in returned object
+    
+    // Increment view count only if viewer is not the creator
+    if (!viewerId || viewerId !== auction.creator.id) {
+      await this.auctionsRepository.increment({ id }, 'viewCount', 1);
+      auction.viewCount += 1; // reflect in returned object
+    }
+    
     return auction;
   }
 
@@ -208,6 +215,25 @@ export class AuctionsService {
 
     if (auction.status !== AuctionStatus.PENDING && auction.status !== AuctionStatus.ACTIVE) {
       throw new BadRequestException('Cannot edit an auction that has ended');
+    }
+
+    // BUG FIX: Block changing reservePrice and minBidIncrement if bids exist
+    const bidsCount = await this.dataSource.getRepository(Bid).count({ where: { auction: { id } } });
+    if (bidsCount > 0) {
+      if (updateDto.reservePrice !== undefined && Number(updateDto.reservePrice) !== Number(auction.reservePrice)) {
+        throw new BadRequestException('Cannot change reserve price after bids have been placed');
+      }
+      if (updateDto.minBidIncrement !== undefined && Number(updateDto.minBidIncrement) !== Number(auction.minBidIncrement)) {
+        throw new BadRequestException('Cannot change minimum bid increment after bids have been placed');
+      }
+    }
+
+    let endTimeChanged = false;
+    if (updateDto.endTime) {
+      const newEndTime = new Date(updateDto.endTime);
+      if (newEndTime.getTime() !== auction.endTime.getTime()) {
+        endTimeChanged = true;
+      }
     }
 
     // BUG-09: Only apply safe, whitelisted fields — never allow currentPrice/status/winnerId
@@ -232,7 +258,25 @@ export class AuctionsService {
       auction.category = { id: updateDto.categoryId } as any;
     }
 
-    return this.auctionsRepository.save(auction);
+    const saved = await this.auctionsRepository.save(auction);
+
+    // BUG FIX: Reschedule BullMQ job if endTime changed
+    if (endTimeChanged && saved.status !== AuctionStatus.CANCELLED && saved.status !== AuctionStatus.SOLD) {
+      await this.auctionsQueue.remove(`auction-${id}`).catch(() => null);
+      const delay = saved.endTime.getTime() - Date.now();
+      if (delay > 0) {
+        await this.auctionsQueue.add(
+          'endAuction',
+          { auctionId: saved.id },
+          { delay, jobId: `auction-${saved.id}` }
+        );
+      } else {
+        // If the new end time is already in the past, end it immediately
+        await this.endAuction(saved.id);
+      }
+    }
+
+    return saved;
   }
 
   async remove(id: string, userId: string, userRole: string): Promise<void> {
@@ -255,10 +299,11 @@ export class AuctionsService {
     let auctionTitle = '';
 
     try {
+      // BUG FIX: Prevent N+1 memory exhaustion by avoiding fetching all bids
       const auction = await queryRunner.manager.findOne(Auction, {
         where: { id: auctionId },
         lock: { mode: 'pessimistic_write' },
-        relations: ['bids', 'bids.bidder', 'creator'],
+        relations: ['creator'],
       });
 
       if (!auction) throw new NotFoundException('Auction not found');
@@ -269,10 +314,15 @@ export class AuctionsService {
 
       auctionTitle = auction.title;
 
+      const highestBid = await queryRunner.manager.findOne(Bid, {
+        where: { auction: { id: auctionId } },
+        order: { amount: 'DESC' },
+        relations: ['bidder'],
+      });
+
       const currentPriceNum = Number(auction.currentPrice);
       const minBid =
-        currentPriceNum === Number(auction.startingPrice) &&
-        (!auction.bids || auction.bids.length === 0)
+        currentPriceNum === Number(auction.startingPrice) && !highestBid
           ? currentPriceNum
           : currentPriceNum + Number(auction.minBidIncrement);
 
@@ -281,14 +331,8 @@ export class AuctionsService {
       }
 
       // Check for outbid
-      if (auction.bids && auction.bids.length > 0) {
-        const highestBid = auction.bids.reduce(
-          (max, b) => (Number(b.amount) > Number(max.amount) ? b : max),
-          auction.bids[0],
-        );
-        if (highestBid.bidder.id !== bidderId) {
-          outbidUserId = highestBid.bidder.id;
-        }
+      if (highestBid && highestBid.bidder.id !== bidderId) {
+        outbidUserId = highestBid.bidder.id;
       }
 
       const reserveMet = auction.reservePrice ? amount >= Number(auction.reservePrice) : true;

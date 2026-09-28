@@ -18,6 +18,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { User } from '../users/user.entity';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { OptionalJwtAuthGuard } from '../common/guards/optional-jwt-auth.guard';
 
 @Controller('auctions')
 export class AuctionsController {
@@ -43,9 +44,10 @@ export class AuctionsController {
     return this.auctionsService.findMine(user.id, limit ? parseInt(limit, 10) : 4);
   }
 
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')
-  async findOne(@Param('id') id: string): Promise<Auction> {
-    return this.auctionsService.findOne(id);
+  async findOne(@Param('id') id: string, @CurrentUser() user: User | null): Promise<Auction> {
+    return this.auctionsService.findOne(id, user?.id);
   }
 
   @UseGuards(JwtAuthGuard)

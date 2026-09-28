@@ -167,6 +167,7 @@ export default function Register() {
                   onChange={(e) => setName(e.target.value)}
                   placeholder="John Doe"
                   className="input-field pl-10"
+                  suppressHydrationWarning
                 />
               </div>
             </div>
@@ -183,6 +184,7 @@ export default function Register() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
                   className="input-field pl-10"
+                  suppressHydrationWarning
                 />
               </div>
             </div>
@@ -200,11 +202,13 @@ export default function Register() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Min. 8 characters"
                   className="input-field pl-10 pr-10"
+                  suppressHydrationWarning
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(v => !v)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  suppressHydrationWarning
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -228,6 +232,7 @@ export default function Register() {
               type="submit"
               disabled={loading}
               className="btn-primary w-full py-3 text-sm"
+              suppressHydrationWarning
             >
               {loading ? (
                 <span className="flex items-center gap-2">
@@ -253,6 +258,7 @@ export default function Register() {
                 window.location.href = `${apiUrl}/auth/google`;
               }}
               className="w-full flex justify-center items-center gap-3 py-3 px-4 border border-gray-300 rounded-xl shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              suppressHydrationWarning
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />

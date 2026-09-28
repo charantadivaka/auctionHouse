@@ -70,6 +70,14 @@ const mockConfigService = () => ({
 const mockMailService = () => ({
   sendVerificationEmail: jest.fn().mockResolvedValue(undefined),
   sendPasswordReset: jest.fn().mockResolvedValue(undefined),
+  sendOtp: jest.fn().mockResolvedValue(undefined),
+});
+
+const mockRedisClient = () => ({
+  set: jest.fn().mockResolvedValue('OK'),
+  get: jest.fn().mockResolvedValue('123456'),
+  del: jest.fn().mockResolvedValue(1),
+  incr: jest.fn().mockResolvedValue(1),
 });
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -87,6 +95,7 @@ describe('AuthService', () => {
         { provide: JwtService, useFactory: mockJwtService },
         { provide: ConfigService, useFactory: mockConfigService },
         { provide: MailService, useFactory: mockMailService },
+        { provide: 'REDIS_CLIENT', useFactory: mockRedisClient },
       ],
     }).compile();
 
@@ -166,15 +175,15 @@ describe('AuthService', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
 
-    it('should return tokens on successful login', async () => {
+    it('should send OTP and return requiresOtp=true on successful credentials', async () => {
       const user = makeUser();
       repo.findOneBy.mockResolvedValue(user);
       repo.save.mockResolvedValue(user);
 
       const result = await service.login({ email: 'test@example.com', password: 'Password1!' });
-      expect(result.token).toBeDefined();
-      expect(result.refreshToken).toBeDefined();
-      expect(result.user.email).toBe('test@example.com');
+      expect(result.requiresOtp).toBe(true);
+      expect(result.email).toBe('test@example.com');
+      expect(result.message).toContain('verification code');
     });
   });
 

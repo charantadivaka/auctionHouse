@@ -12,6 +12,14 @@ import {
   Star, Edit2, Trash2, StopCircle, Send, Video, ChevronLeft, ChevronRight, MessageCircle, X, CreditCard, CheckCircle2, Trophy
 } from 'lucide-react';
 import Link from 'next/link';
+import Image from 'next/image';
+
+const getImageUrl = (path: string) => {
+  if (!path) return '';
+  if (path.startsWith('http') || path.startsWith('data:')) return path;
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  return `${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`;
+};
 
 function CountdownTimer({ endTime }: { endTime: string }) {
   const [timeLeft, setTimeLeft] = useState('');
@@ -148,6 +156,8 @@ export default function AuctionDetails() {
 
   const [auction, setAuction] = useState<any>(null);
   const [bids, setBids] = useState<any[]>([]);
+  const [bidsPage, setBidsPage] = useState(1);
+  const [totalBids, setTotalBids] = useState(0);
   const [loading, setLoading] = useState(true);
   const [bidAmount, setBidAmount] = useState('');
   const [bidLoading, setBidLoading] = useState(false);
@@ -165,10 +175,12 @@ export default function AuctionDetails() {
       try {
         const [auctionRes, bidsRes] = await Promise.all([
           api.get(`/auctions/${id}`),
-          api.get(`/bids/auction/${id}`)
+          api.get(`/bids/auction/${id}?page=1&limit=20`)
         ]);
         setAuction(auctionRes.data);
         setBids(bidsRes.data.data || []);
+        setTotalBids(bidsRes.data.total || 0);
+        setBidsPage(1);
         if (user) {
           api.get(`/watchlist/check/${id}`).then(r => setIsWatchlisted(r.data.isWatchlisted)).catch(() => {});
         }
@@ -186,8 +198,25 @@ export default function AuctionDetails() {
     const socket = socketManager.getAuctionsSocket();
     socket.emit('joinAuction', id);
 
-    const onBid = (a: any) => { setAuction(a); setError(''); setBidLoading(false); api.get(`/bids/auction/${id}`).then(r => setBids(r.data.data || [])); };
-    const onEnded = (a: any) => { setAuction(a); api.get(`/bids/auction/${id}`).then(r => setBids(r.data.data || [])); };
+    const onBid = (a: any) => { 
+      setAuction(a); 
+      setError(''); 
+      setBidLoading(false); 
+      // Reset bids page to 1 on new bid to show latest
+      api.get(`/bids/auction/${id}?page=1&limit=20`).then(r => {
+        setBids(r.data.data || []);
+        setTotalBids(r.data.total || 0);
+        setBidsPage(1);
+      }); 
+    };
+    const onEnded = (a: any) => { 
+      setAuction(a); 
+      api.get(`/bids/auction/${id}?page=1&limit=20`).then(r => {
+        setBids(r.data.data || []);
+        setTotalBids(r.data.total || 0);
+        setBidsPage(1);
+      }); 
+    };
     const onError = (d: { message: string }) => { setError(d.message); setBidLoading(false); };
 
     socket.on('bidPlaced', onBid);
@@ -208,6 +237,17 @@ export default function AuctionDetails() {
     setError('');
     setBidLoading(true);
     socketManager.getAuctionsSocket().emit('placeBid', { auctionId: id, amount: Number(bidAmount) });
+  };
+
+  const loadMoreBids = async () => {
+    try {
+      const nextPage = bidsPage + 1;
+      const res = await api.get(`/bids/auction/${id}?page=${nextPage}&limit=20`);
+      setBids(prev => [...prev, ...(res.data.data || [])]);
+      setBidsPage(nextPage);
+    } catch (err) {
+      console.error('Failed to load more bids', err);
+    }
   };
 
   const toggleWatchlist = async () => {
@@ -314,8 +354,14 @@ export default function AuctionDetails() {
             <div className="card overflow-hidden">
               {images.length > 0 ? (
                 <div className="relative">
-                  <div className="aspect-[16/10] overflow-hidden bg-gray-100">
-                    <img src={images[activeImageIdx]} alt={auction.title} className="w-full h-full object-contain" />
+                  <div className="relative aspect-[16/10] overflow-hidden bg-gray-100">
+                    <Image 
+                      src={getImageUrl(images[activeImageIdx])} 
+                      alt={auction.title} 
+                      fill
+                      className="object-contain" 
+                      sizes="(max-width: 768px) 100vw, 66vw"
+                    />
                   </div>
                   {images.length > 1 && (
                     <>
@@ -327,8 +373,8 @@ export default function AuctionDetails() {
                       </button>
                       <div className="flex gap-1.5 p-3 overflow-x-auto bg-gray-50 border-t border-gray-100">
                         {images.map((img: string, i: number) => (
-                          <button key={i} onClick={() => setActiveImageIdx(i)} className={`flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden border-2 transition-all ${i === activeImageIdx ? 'border-indigo-500' : 'border-transparent opacity-60 hover:opacity-100'}`}>
-                            <img src={img} alt="" className="w-full h-full object-cover" />
+                          <button key={i} onClick={() => setActiveImageIdx(i)} className={`relative flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden border-2 transition-all ${i === activeImageIdx ? 'border-indigo-500' : 'border-transparent opacity-60 hover:opacity-100'}`}>
+                            <Image src={getImageUrl(img)} alt="" fill className="object-cover" sizes="56px" />
                           </button>
                         ))}
                       </div>
@@ -428,26 +474,38 @@ export default function AuctionDetails() {
             {/* Bid History */}
             <div className="card overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-100">
-                <h3 className="font-bold text-gray-900">Bid History ({bids.length})</h3>
+                <h3 className="font-bold text-gray-900">Bid History ({totalBids || bids.length})</h3>
               </div>
               {bids.length === 0 ? (
                 <div className="py-10 text-center text-sm text-gray-400">No bids yet — be the first!</div>
               ) : (
-                <ul className="divide-y divide-gray-100 max-h-64 overflow-y-auto">
-                  {bids.map((bid, i) => (
-                    <li key={bid.id} className={`px-6 py-3 flex items-center justify-between ${i === 0 ? 'bg-green-50' : ''}`}>
-                      <div className="flex items-center gap-2">
-                        <img src={bid.bidder?.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(bid.bidder?.name || 'U')}&size=28&background=6366f1&color=fff`} className="w-7 h-7 rounded-full" alt="" />
-                        <span className="text-sm text-gray-700 font-medium">{bid.bidder?.name || 'Anonymous'}</span>
-                        {i === 0 && <span className="badge badge-success text-[9px]">Leading</span>}
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-gray-900 text-sm">${Number(bid.amount).toLocaleString()}</p>
-                        <p className="text-xs text-gray-400">{formatDistanceToNow(new Date(bid.createdAt), { addSuffix: true })}</p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                <div className="flex flex-col max-h-64 overflow-y-auto">
+                  <ul className="divide-y divide-gray-100">
+                    {bids.map((bid, i) => (
+                      <li key={bid.id} className={`px-6 py-3 flex items-center justify-between ${i === 0 ? 'bg-green-50' : ''}`}>
+                        <div className="flex items-center gap-2">
+                          <img src={bid.bidder?.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(bid.bidder?.name || 'U')}&size=28&background=6366f1&color=fff`} className="w-7 h-7 rounded-full" alt="" />
+                          <span className="text-sm text-gray-700 font-medium">{bid.bidder?.name || 'Anonymous'}</span>
+                          {i === 0 && <span className="badge badge-success text-[9px]">Leading</span>}
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-gray-900 text-sm">${Number(bid.amount).toLocaleString()}</p>
+                          <p className="text-xs text-gray-400">{formatDistanceToNow(new Date(bid.createdAt), { addSuffix: true })}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  {bids.length < totalBids && (
+                    <div className="p-3 text-center border-t border-gray-100">
+                      <button 
+                        onClick={loadMoreBids}
+                        className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-full"
+                      >
+                        Load More Bids
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 

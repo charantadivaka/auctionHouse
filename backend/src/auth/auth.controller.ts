@@ -6,7 +6,7 @@ import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { User } from '../users/user.entity';
-import { IsEmail, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsNotEmpty } from 'class-validator';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 
 class ForgotPasswordDto {
@@ -31,6 +31,15 @@ class RefreshTokenDto {
   refreshToken: string;
 }
 
+class VerifyOtpDto {
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  @IsNotEmpty()
+  otp: string;
+}
+
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -41,10 +50,16 @@ export class AuthController {
     return this.authService.register(dto);
   }
 
-  /** POST /auth/login */
+  /** POST /auth/login — step 1: validate credentials, send OTP email */
   @Post('login')
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  /** POST /auth/verify-otp — step 2: check OTP, receive JWT tokens */
+  @Post('verify-otp')
+  verifyOtp(@Body() dto: VerifyOtpDto) {
+    return this.authService.verifyOtp(dto.email, dto.otp);
   }
 
   /** POST /auth/refresh */
@@ -87,8 +102,11 @@ export class AuthController {
   async googleAuthRedirect(@Req() req, @Res() res) {
     const { token, refreshToken } = await this.authService.googleLogin(req);
 
-    // Construct redirect URL to frontend with tokens as query params
+    // BUG FIX: Set tokens as cookies instead of passing in URL params
+    res.cookie('token', token, { httpOnly: false, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' });
+    res.cookie('refreshToken', refreshToken, { httpOnly: false, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' });
+
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    res.redirect(`${frontendUrl}/auth/callback?token=${token}&refreshToken=${refreshToken}`);
+    res.redirect(`${frontendUrl}/auth/callback`);
   }
 }

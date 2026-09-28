@@ -86,6 +86,33 @@ export class MailService {
     });
   }
 
+  async sendOtp(email: string, otp: string): Promise<void> {
+    await this.send({
+      to: email,
+      subject: 'AuctionHouse — Your Login Code',
+      text:
+        `Your one-time login code is: ${otp}\n\n` +
+        `This code expires in 5 minutes. Do not share it with anyone.`,
+      html: `
+        <div style="font-family:sans-serif;max-width:480px;margin:auto;">
+          <h2 style="color:#4f46e5;">Your Login Code 🔐</h2>
+          <p>Use the code below to complete your sign-in to AuctionHouse.</p>
+          <div style="font-size:40px;font-weight:700;letter-spacing:14px;
+                      background:#f3f4f6;padding:24px;border-radius:12px;
+                      text-align:center;margin:24px 0;color:#1f2937;">
+            ${otp}
+          </div>
+          <p style="color:#6b7280;font-size:13px;">
+            This code expires in <strong>5 minutes</strong>.<br/>
+            If you didn't try to log in, you can safely ignore this email.
+          </p>
+          <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;"/>
+          <p style="color:#9ca3af;font-size:12px;">AuctionHouse Security Team</p>
+        </div>
+      `,
+    });
+  }
+
   async sendVerificationEmail(email: string, verifyLink: string): Promise<void> {
     await this.send({
       to: email,

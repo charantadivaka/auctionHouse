@@ -8,6 +8,14 @@ import { useAuth } from '@/context/AuthContext';
 import Link from 'next/link';
 import { Star, MapPin, Calendar, Users, UserPlus, UserMinus, Edit2, ArrowRight, Package, Clock, Tag } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import Image from 'next/image';
+
+const getImageUrl = (path: string) => {
+  if (!path) return '';
+  if (path.startsWith('http') || path.startsWith('data:')) return path;
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  return `${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`;
+};
 
 function StarRating({ stars, size = 'sm' }: { stars: number; size?: 'sm' | 'md' }) {
   const sz = size === 'md' ? 'w-5 h-5' : 'w-4 h-4';
@@ -193,16 +201,18 @@ export default function Profile() {
           </div>
 
           <div className="px-6 pb-6">
-            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 -mt-12 mb-4">
-              <div className="flex items-end gap-4">
+            {/* Avatar row — pulls up into the banner */}
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-end gap-4">
                 <img
                   src={profile.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name)}&size=128&background=6366f1&color=fff`}
                   alt={profile.name}
-                  className="w-24 h-24 rounded-2xl border-4 border-white shadow-lg object-cover bg-white flex-shrink-0"
+                  className="w-24 h-24 rounded-2xl border-4 border-white shadow-lg object-cover bg-white flex-shrink-0 -mt-0"
                 />
-                <div className="mb-2">
-                  <h1 className="text-2xl font-bold text-gray-900">{profile.name}</h1>
-                  <div className="flex items-center gap-1.5 mt-1">
+                {/* Name block — sits below banner, never overlapping it */}
+                <div className="mt-2 sm:mt-0 min-w-0">
+                  <h1 className="text-2xl font-bold text-gray-900 truncate">{profile.name}</h1>
+                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                     <StarRating stars={Math.round(Number(profile.sellerRating))} />
                     <span className="text-sm text-gray-500">
                       {profile.sellerRating > 0 ? `${Number(profile.sellerRating).toFixed(1)} (${profile.totalRatingsCount})` : 'No ratings'}
@@ -211,7 +221,7 @@ export default function Profile() {
                 </div>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-shrink-0 mt-2 sm:mt-4">
                 {isOwnProfile ? (
                   <button onClick={() => setShowEditModal(true)} className="btn-secondary flex items-center gap-1.5 text-sm">
                     <Edit2 className="w-4 h-4" /> Edit Profile
@@ -291,9 +301,9 @@ export default function Profile() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                 {auctions.map(auction => (
                   <Link key={auction.id} href={`/auctions/${auction.id}`} className="card group hover:shadow-lg hover:-translate-y-0.5 transition-all overflow-hidden flex flex-col">
-                    <div className="aspect-[16/9] bg-gray-100 overflow-hidden">
+                    <div className="relative aspect-[16/9] bg-gray-100 overflow-hidden">
                       {auction.images?.length > 0 ? (
-                        <img src={auction.images[0]} alt={auction.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                        <Image src={getImageUrl(auction.images[0])} alt={auction.title} fill sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" className="object-cover group-hover:scale-105 transition-transform duration-500" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center"><Tag className="w-8 h-8 text-gray-300" /></div>
                       )}

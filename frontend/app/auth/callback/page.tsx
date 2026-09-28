@@ -3,6 +3,7 @@
 import { useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Cookies from 'js-cookie';
+import { api } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 
 function AuthCallbackContent() {
@@ -11,23 +12,21 @@ function AuthCallbackContent() {
   const { login } = useAuth();
 
   useEffect(() => {
-    const token = searchParams.get('token');
-    const refreshToken = searchParams.get('refreshToken');
+    // BUG FIX: Read from cookies first (set by backend), then fallback to search params (legacy)
+    const token = Cookies.get('token') || searchParams.get('token');
+    const refreshToken = Cookies.get('refreshToken') || searchParams.get('refreshToken');
 
     if (token && refreshToken) {
-      import('@/lib/api').then(({ api }) => {
-        api.get('/auth/me', { headers: { Authorization: `Bearer ${token}` } })
-          .then(res => {
-            import('js-cookie').then((Cookies) => {
-              Cookies.default.set('refreshToken', refreshToken, { expires: 30 });
-              login(token, res.data);
-              router.push('/dashboard');
-            });
-          })
-          .catch(() => {
-            router.push('/login?error=FailedToFetchProfile');
-          });
-      });
+      api.get('/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+        .then(res => {
+          Cookies.set('token', token, { expires: 30 });
+          Cookies.set('refreshToken', refreshToken, { expires: 30 });
+          login(token, res.data);
+          router.push('/dashboard');
+        })
+        .catch(() => {
+          router.push('/login?error=FailedToFetchProfile');
+        });
     } else {
       router.push('/login?error=OAuthFailed');
     }

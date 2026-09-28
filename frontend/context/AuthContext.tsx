@@ -52,7 +52,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         try {
           const res = await api.get('/auth/me');
           setUser(res.data);
-          socketManager.reconnectAll();
+          if (typeof window !== 'undefined') socketManager.reconnectAll();
         } catch {
           Cookies.remove('token');
         }
@@ -66,6 +66,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // BUG-08: Subscribe to notifications socket to maintain live unread count
   useEffect(() => {
     if (!user) return;
+    // Guard: socket APIs are browser-only
+    if (typeof window === 'undefined') return;
 
     fetchUnreadCount();
 

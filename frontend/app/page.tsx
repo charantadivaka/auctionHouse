@@ -4,26 +4,37 @@ import { Suspense, useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import Navbar from '@/components/Navbar';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Clock, Tag, ArrowRight, Search, SlidersHorizontal, TrendingUp, Zap, Eye } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
 import { useSearchParams, useRouter } from 'next/navigation';
+import CountdownTimer from '@/components/CountdownTimer';
+import { socketManager } from '@/lib/socket';
+import toast from 'react-hot-toast';
 
 const CONDITIONS: Record<string, string> = {
   new: 'New', like_new: 'Like New', good: 'Good', fair: 'Fair', poor: 'Poor',
 };
 
+const getImageUrl = (path: string) => {
+  if (!path) return '';
+  if (path.startsWith('http') || path.startsWith('data:')) return path;
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  return `${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`;
+};
+
 function AuctionCard({ auction }: { auction: any }) {
-  const timeLeft = auction.endTime ? formatDistanceToNow(new Date(auction.endTime), { addSuffix: true }) : '';
   const isEndingSoon = auction.endTime && (new Date(auction.endTime).getTime() - Date.now()) < 3600000;
 
   return (
     <div className="card group hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 overflow-hidden flex flex-col">
       <div className="relative aspect-[4/3] bg-gray-100 overflow-hidden">
         {auction.images?.length > 0 ? (
-          <img
-            src={auction.images[0]}
+          <Image
+            src={getImageUrl(auction.images[0])}
             alt={auction.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            fill
+            className="object-cover group-hover:scale-105 transition-transform duration-500"
+            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
@@ -34,13 +45,12 @@ function AuctionCard({ auction }: { auction: any }) {
         {/* Status badges */}
         <div className="absolute top-3 left-3 flex gap-1.5">
           {auction.status === 'active' && (
-            <span className="flex items-center gap-1 bg-white/95 backdrop-blur-sm px-2 py-1 rounded-full text-xs font-semibold text-gray-700 shadow-sm">
-              <Clock className="w-3 h-3 text-indigo-500" />
-              {timeLeft}
-            </span>
+            <div className="flex items-center bg-white/95 backdrop-blur-sm px-2.5 py-1 rounded-full text-xs shadow-sm border border-white/40">
+              <CountdownTimer endTime={auction.endTime} />
+            </div>
           )}
           {isEndingSoon && auction.status === 'active' && (
-            <span className="flex items-center gap-1 bg-red-500 px-2 py-1 rounded-full text-xs font-bold text-white shadow-sm">
+            <span className="flex items-center gap-1 bg-red-500 px-2 py-1 rounded-full text-xs font-bold text-white shadow-sm animate-pulse">
               <Zap className="w-3 h-3" /> Hot
             </span>
           )}
@@ -125,6 +135,17 @@ function HomeContent() {
   const [sort, setSort] = useState('newest');
   const [auctionType, setAuctionType] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState('');
+
+  const fetchCategories = async () => {
+    try {
+      const res = await api.get('/categories');
+      setCategories(Array.isArray(res.data) ? res.data : []);
+    } catch (error) {
+      console.error('Error fetching categories', error);
+    }
+  };
 
   const fetchAuctions = async () => {
     setLoading(true);
@@ -137,6 +158,7 @@ function HomeContent() {
       });
       if (search) queryParams.append('search', search);
       if (auctionType) queryParams.append('auctionType', auctionType);
+      if (selectedCategory) queryParams.append('category', selectedCategory);
 
       const res = await api.get(`/auctions?${queryParams.toString()}`);
       setAuctions(Array.isArray(res.data?.data) ? res.data.data : []);
@@ -150,8 +172,49 @@ function HomeContent() {
     }
   };
 
-  useEffect(() => { setPage(1); }, [search, sort, auctionType]);
-  useEffect(() => { fetchAuctions(); }, [page, search, sort, auctionType]);
+  useEffect(() => { fetchCategories(); }, []);
+  useEffect(() => { setPage(1); }, [search, sort, auctionType, selectedCategory]);
+  useEffect(() => { fetchAuctions(); }, [page, search, sort, auctionType, selectedCategory]);
+
+  // Real-time WebSockets updates
+  useEffect(() => {
+    if (typeof window === 'undefined' || auctions.length === 0) return;
+
+    const socket = socketManager.getAuctionsSocket();
+
+    // Join rooms for all currently visible auctions
+    const auctionIds = auctions.map(a => a.id);
+    auctionIds.forEach(id => socket.emit('joinAuction', id));
+
+    const handleBidPlaced = (updatedAuction: any) => {
+      setAuctions((prev) => {
+        const index = prev.findIndex(a => a.id === updatedAuction.id);
+        if (index === -1) return prev; // Not on this page
+        
+        // Show a quick toast notification
+        toast.success(`New bid on ${updatedAuction.title}!`, {
+          icon: '🔥',
+          id: `bid-${updatedAuction.id}-${updatedAuction.currentPrice}`,
+          duration: 3000,
+        });
+        
+        const newAuctions = [...prev];
+        newAuctions[index] = { 
+          ...newAuctions[index], 
+          currentPrice: updatedAuction.currentPrice, 
+          endTime: updatedAuction.endTime 
+        };
+        return newAuctions;
+      });
+    };
+
+    socket.on('bidPlaced', handleBidPlaced);
+
+    return () => {
+      auctionIds.forEach(id => socket.emit('leaveAuction', id));
+      socket.off('bidPlaced', handleBidPlaced);
+    };
+  }, [auctions.map(a => a.id).join(',')]); // Re-bind only if the visible set of auctions changes
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -231,6 +294,38 @@ function HomeContent() {
             </select>
           </div>
         </div>
+
+        {/* Categories Section */}
+        {categories.length > 0 && (
+          <div className="mb-8">
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Categories</h3>
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
+              <button
+                onClick={() => setSelectedCategory('')}
+                className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+                  selectedCategory === ''
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
+                    : 'bg-white border border-gray-200 text-gray-600 hover:border-indigo-300 hover:bg-indigo-50'
+                }`}
+              >
+                All Categories
+              </button>
+              {categories.map((category) => (
+                <button
+                  key={category.id}
+                  onClick={() => setSelectedCategory(category.slug)}
+                  className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+                    selectedCategory === category.slug
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
+                      : 'bg-white border border-gray-200 text-gray-600 hover:border-indigo-300 hover:bg-indigo-50'
+                  }`}
+                >
+                  {category.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

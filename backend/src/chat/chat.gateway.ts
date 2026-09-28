@@ -93,12 +93,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     if (!data.content?.trim()) return;
 
-    const msg = await this.chatService.saveMessage(
-      data.auctionId,
-      client.data.user.sub,
-      data.content.trim(),
-    );
-    this.server.to(`chat-${data.auctionId}`).emit('newMessage', msg);
+    try {
+      const msg = await this.chatService.saveMessage(
+        data.auctionId,
+        client.data.user.sub,
+        data.content.trim(),
+      );
+      this.server.to(`chat-${data.auctionId}`).emit('newMessage', msg);
+    } catch (error) {
+      client.emit('chatError', { message: 'Failed to send message. Auction might not exist.' });
+    }
   }
 
   @SubscribeMessage('typing')
