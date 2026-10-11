@@ -169,6 +169,11 @@ export default function AuctionDetails() {
   const [showChat, setShowChat] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
+  const [userRating, setUserRating] = useState<any>(null);
+  const [ratingStars, setRatingStars] = useState(5);
+  const [ratingComment, setRatingComment] = useState('');
+  const [submittingRating, setSubmittingRating] = useState(false);
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
   useEffect(() => {
     const fetch = async () => {
@@ -177,12 +182,22 @@ export default function AuctionDetails() {
           api.get(`/auctions/${id}`),
           api.get(`/bids/auction/${id}?page=1&limit=20`)
         ]);
-        setAuction(auctionRes.data);
+        const fetchedAuction = auctionRes.data;
+        setAuction(fetchedAuction);
         setBids(bidsRes.data.data || []);
         setTotalBids(bidsRes.data.total || 0);
         setBidsPage(1);
         if (user) {
           api.get(`/watchlist/check/${id}`).then(r => setIsWatchlisted(r.data.isWatchlisted)).catch(() => {});
+          if (fetchedAuction.status === 'sold' && fetchedAuction.creator?.id) {
+            api.get(`/ratings/seller/${fetchedAuction.creator.id}`).then(r => {
+              const mine = r.data.data?.find((rt: any) => rt.auction?.id === id);
+              if (mine) {
+                setUserRating(mine);
+                setRatingSubmitted(true);
+              }
+            }).catch(() => {});
+          }
         }
       } catch (err) {
         console.error('Failed to load auction', err);
@@ -202,6 +217,7 @@ export default function AuctionDetails() {
       setAuction(a); 
       setError(''); 
       setBidLoading(false); 
+      setBidAmount(''); // Reset input on successful bid
       // Reset bids page to 1 on new bid to show latest
       api.get(`/bids/auction/${id}?page=1&limit=20`).then(r => {
         setBids(r.data.data || []);
@@ -217,15 +233,20 @@ export default function AuctionDetails() {
         setBidsPage(1);
       }); 
     };
+    const onActivated = (a: any) => {
+      setAuction(a);
+    };
     const onError = (d: { message: string }) => { setError(d.message); setBidLoading(false); };
 
     socket.on('bidPlaced', onBid);
     socket.on('auctionEnded', onEnded);
+    socket.on('auctionActivated', onActivated);
     socket.on('bidError', onError);
 
     return () => {
       socket.off('bidPlaced', onBid);
       socket.off('auctionEnded', onEnded);
+      socket.off('auctionActivated', onActivated);
       socket.off('bidError', onError);
       socket.emit('leaveAuction', id);
     };
@@ -291,6 +312,26 @@ export default function AuctionDetails() {
       alert(err.response?.data?.message || 'Failed to confirm payment');
     } finally {
       setPaymentLoading(false);
+    }
+  };
+
+  const handleRatingSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!auction?.creator?.id) return;
+    setSubmittingRating(true);
+    try {
+      const res = await api.post('/ratings', {
+        sellerId: auction.creator.id,
+        auctionId: id,
+        stars: ratingStars,
+        comment: ratingComment.trim() || undefined,
+      });
+      setUserRating(res.data);
+      setRatingSubmitted(true);
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to submit rating');
+    } finally {
+      setSubmittingRating(false);
     }
   };
 
@@ -556,7 +597,7 @@ export default function AuctionDetails() {
               )}
 
               {auction.status === 'sold' && isWinner && (
-                <div className="mb-5">
+                <div className="mb-5 space-y-3">
                   {auction.paymentStatus === 'paid' ? (
                     <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
                       <div className="flex items-center justify-center gap-2 mb-1">
@@ -593,48 +634,126 @@ export default function AuctionDetails() {
                       </button>
                     </div>
                   )}
+
+                  {/* Rating / Review the seller */}
+                  {ratingSubmitted || userRating ? (
+                    <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-center">
+                      <div className="flex items-center justify-center gap-1 text-yellow-500 mb-1">
+                        {[1, 2, 3, 4, 5].map((s) => (
+                          <Star
+                            key={s}
+                            className={`w-4 h-4 ${
+                              s <= (userRating?.stars || ratingStars)
+                                ? 'fill-yellow-400 text-yellow-400'
+                                : 'text-gray-300'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                      <p className="text-xs font-semibold text-indigo-900">
+                        Your seller review has been submitted!
+                      </p>
+                      {userRating?.comment && (
+                        <p className="text-xs text-gray-600 mt-1 italic">
+                          &ldquo;{userRating.comment}&rdquo;
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <form
+                      onSubmit={handleRatingSubmit}
+                      className="bg-white border border-gray-200 rounded-xl p-3 space-y-2.5"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-gray-800">Rate the Seller</span>
+                        <div className="flex items-center gap-0.5">
+                          {[1, 2, 3, 4, 5].map((s) => (
+                            <button
+                              key={s}
+                              type="button"
+                              onClick={() => setRatingStars(s)}
+                              className="p-0.5 hover:scale-110 transition-transform"
+                            >
+                              <Star
+                                className={`w-4 h-4 ${
+                                  s <= ratingStars
+                                    ? 'fill-yellow-400 text-yellow-400'
+                                    : 'text-gray-300'
+                                }`}
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <textarea
+                        value={ratingComment}
+                        onChange={(e) => setRatingComment(e.target.value)}
+                        placeholder="Write a review for the seller (optional)..."
+                        rows={2}
+                        className="input-field text-xs py-1.5 resize-none w-full"
+                      />
+                      <button
+                        type="submit"
+                        disabled={submittingRating}
+                        className="btn-secondary w-full text-xs py-1.5 flex items-center justify-center gap-1"
+                      >
+                        {submittingRating ? 'Submitting...' : 'Submit Review'}
+                      </button>
+                    </form>
+                  )}
                 </div>
               )}
 
-              {auction.status === 'active' && !isSeller && (
-                <form onSubmit={handlePlaceBid} className="space-y-3">
-                  {error && (
-                    <div className="bg-red-50 border border-red-200 text-red-600 text-xs px-3 py-2 rounded-lg flex items-start gap-1.5">
-                      {error}
+              {auction.status === 'active' && !isSeller && (() => {
+                const isOpeningBid = bids.length === 0 && totalBids === 0;
+                const minBidAmount = isOpeningBid
+                  ? Number(auction.currentPrice)
+                  : Number(auction.currentPrice) + Number(auction.minBidIncrement || 1);
+
+                return (
+                  <form onSubmit={handlePlaceBid} className="space-y-3">
+                    {error && (
+                      <div className="bg-red-50 border border-red-200 text-red-600 text-xs px-3 py-2 rounded-lg flex items-start gap-1.5">
+                        {error}
+                      </div>
+                    )}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1.5">Your bid ($)</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">$</span>
+                        <input
+                          type="number"
+                          min={minBidAmount.toFixed(2)}
+                          step="0.01"
+                          value={bidAmount}
+                          onChange={e => setBidAmount(e.target.value)}
+                          required
+                          className="input-field pl-7 text-lg font-bold"
+                          placeholder={`Min: $${minBidAmount.toFixed(2)}`}
+                          suppressHydrationWarning
+                        />
+                      </div>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {isOpeningBid
+                          ? `Opening bid starts at: $${minBidAmount.toFixed(2)}`
+                          : `Min. increment: $${Number(auction.minBidIncrement || 1).toFixed(2)}`}
+                      </p>
                     </div>
-                  )}
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Your bid ($)</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">$</span>
-                      <input
-                        type="number"
-                        min={(Number(auction.currentPrice) + Number(auction.minBidIncrement || 1)).toFixed(2)}
-                        step="0.01"
-                        value={bidAmount}
-                        onChange={e => setBidAmount(e.target.value)}
-                        required
-                        className="input-field pl-7 text-lg font-bold"
-                        placeholder={`Min: $${(Number(auction.currentPrice) + Number(auction.minBidIncrement || 1)).toFixed(2)}`}
-                        suppressHydrationWarning
-                      />
-                    </div>
-                    <p className="text-xs text-gray-400 mt-1">Min. increment: ${Number(auction.minBidIncrement || 1).toFixed(2)}</p>
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={bidLoading}
-                    className="btn-primary w-full py-3.5 text-base"
-                  >
-                    {bidLoading ? (
-                      <span className="flex items-center gap-2">
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        Placing bid...
-                      </span>
-                    ) : '⚡ Place Bid'}
-                  </button>
-                </form>
-              )}
+                    <button
+                      type="submit"
+                      disabled={bidLoading}
+                      className="btn-primary w-full py-3.5 text-base"
+                    >
+                      {bidLoading ? (
+                        <span className="flex items-center gap-2">
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          Placing bid...
+                        </span>
+                      ) : '⚡ Place Bid'}
+                    </button>
+                  </form>
+                );
+              })()}
 
               {auction.status === 'active' && (
                 <button

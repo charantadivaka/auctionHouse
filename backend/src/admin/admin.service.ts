@@ -5,6 +5,9 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { User, UserRole } from '../users/user.entity';
 import { Auction, AuctionStatus } from '../auctions/auction.entity';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
+import { NotificationType } from '../notifications/notification.entity';
 
 @Injectable()
 export class AdminService {
@@ -15,6 +18,8 @@ export class AdminService {
     private auctionsRepository: Repository<Auction>,
     // BUG-07: Inject queue so we can remove scheduled endAuction jobs on cancel
     @InjectQueue('auctions') private auctionsQueue: Queue,
+    private notificationsService: NotificationsService,
+    private notificationsGateway: NotificationsGateway,
   ) {}
 
   async getStats() {
@@ -88,13 +93,30 @@ export class AdminService {
   }
 
   async cancelAuction(auctionId: string): Promise<void> {
-    const auction = await this.auctionsRepository.findOneBy({ id: auctionId });
+    const auction = await this.auctionsRepository.findOne({
+      where: { id: auctionId },
+      relations: ['creator'],
+    });
     if (!auction) throw new NotFoundException('Auction not found');
 
     // BUG-07: Also remove the scheduled BullMQ job so it doesn't fire after cancel
     await this.auctionsQueue.remove(`auction-${auctionId}`).catch(() => null);
 
     auction.status = AuctionStatus.CANCELLED;
-    await this.auctionsRepository.save(auction);
+    const saved = await this.auctionsRepository.save(auction);
+
+    if (saved.creator?.id) {
+      try {
+        const notif = await this.notificationsService.create(
+          saved.creator.id,
+          NotificationType.AUCTION_ENDING,
+          `Your auction "${saved.title}" was cancelled by an administrator.`,
+          saved.id,
+        );
+        this.notificationsGateway.sendNotificationToUser(saved.creator.id, notif);
+      } catch {
+        // Notification failure should not block admin action
+      }
+    }
   }
 }

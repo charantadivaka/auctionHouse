@@ -258,6 +258,7 @@ export class AuctionsService {
       'endTime',
       'location',
       'shippingInfo',
+      'videoUrl',
     ];
     for (const field of safeFields) {
       if (updateDto[field] !== undefined) {
@@ -300,6 +301,21 @@ export class AuctionsService {
 
     if (auction.creator.id !== userId && userRole !== 'admin') {
       throw new ForbiddenException('You can only delete your own auctions');
+    }
+
+    if (userRole !== 'admin') {
+      if (auction.status === AuctionStatus.SOLD) {
+        throw new BadRequestException('Cannot delete an auction that has already been sold');
+      }
+
+      const bidsCount = await this.dataSource
+        .getRepository(Bid)
+        .count({ where: { auction: { id } } });
+      if (bidsCount > 0) {
+        throw new BadRequestException(
+          'Cannot delete an auction that already has bids placed. Please contact an admin if cancellation is needed.',
+        );
+      }
     }
 
     await this.auctionsQueue.remove(`auction-${id}`).catch(() => null);
@@ -403,47 +419,64 @@ export class AuctionsService {
   }
 
   async endAuction(auctionId: string): Promise<Auction> {
-    const auction = await this.auctionsRepository.findOne({
-      where: { id: auctionId },
-      relations: ['bids', 'bids.bidder', 'creator'],
-    });
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    if (!auction) throw new NotFoundException('Auction not found');
-    // Allow ending PENDING auctions too (edge case: very short start→end window)
-    if (auction.status !== AuctionStatus.ACTIVE && auction.status !== AuctionStatus.PENDING)
-      return auction;
-
+    let savedAuction: Auction;
     let winnerId: string | null = null;
     let winnerAmount = 0;
 
-    if (auction.bids && auction.bids.length > 0) {
-      const highestBid = auction.bids.reduce(
-        (max, bid) => (Number(bid.amount) > Number(max.amount) ? bid : max),
-        auction.bids[0],
-      );
+    try {
+      const auction = await queryRunner.manager.findOne(Auction, {
+        where: { id: auctionId },
+        lock: { mode: 'pessimistic_write' },
+        relations: ['creator'],
+      });
 
-      if (auction.reservePrice && Number(highestBid.amount) < Number(auction.reservePrice)) {
-        auction.status = AuctionStatus.CANCELLED;
-      } else {
-        auction.status = AuctionStatus.SOLD;
-        auction.winnerId = highestBid.bidder.id;
-        winnerId = highestBid.bidder.id;
-        winnerAmount = highestBid.amount;
-
-        highestBid.isWinningBid = true;
-        await this.dataSource.getRepository(Bid).save(highestBid);
+      if (!auction) throw new NotFoundException('Auction not found');
+      // Allow ending PENDING auctions too (edge case: very short start→end window)
+      if (auction.status !== AuctionStatus.ACTIVE && auction.status !== AuctionStatus.PENDING) {
+        await queryRunner.rollbackTransaction();
+        return auction;
       }
-    } else {
-      auction.status = AuctionStatus.CANCELLED;
+
+      const highestBid = await queryRunner.manager.findOne(Bid, {
+        where: { auction: { id: auctionId } },
+        order: { amount: 'DESC' },
+        relations: ['bidder'],
+      });
+
+      if (highestBid) {
+        if (auction.reservePrice && Number(highestBid.amount) < Number(auction.reservePrice)) {
+          auction.status = AuctionStatus.CANCELLED;
+        } else {
+          auction.status = AuctionStatus.SOLD;
+          auction.winnerId = highestBid.bidder.id;
+          winnerId = highestBid.bidder.id;
+          winnerAmount = Number(highestBid.amount);
+
+          highestBid.isWinningBid = true;
+          await queryRunner.manager.save(Bid, highestBid);
+        }
+      } else {
+        auction.status = AuctionStatus.CANCELLED;
+      }
+
+      savedAuction = await queryRunner.manager.save(Auction, auction);
+      await queryRunner.commitTransaction();
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
     }
 
-    const savedAuction = await this.auctionsRepository.save(auction);
-
     // Notifications & User Sales/Purchases Stats
-    if (auction.status === AuctionStatus.SOLD && winnerId) {
+    if (savedAuction.status === AuctionStatus.SOLD && winnerId) {
       await this.dataSource
         .getRepository(User)
-        .increment({ id: auction.creator.id }, 'totalSales', 1)
+        .increment({ id: savedAuction.creator.id }, 'totalSales', 1)
         .catch(() => null);
       await this.dataSource
         .getRepository(User)
@@ -453,26 +486,26 @@ export class AuctionsService {
       const notifWinner = await this.notificationsService.create(
         winnerId,
         NotificationType.AUCTION_WON,
-        `Congratulations! You won "${auction.title}" for $${winnerAmount}.`,
-        auction.id,
+        `Congratulations! You won "${savedAuction.title}" for $${winnerAmount}.`,
+        savedAuction.id,
       );
       this.notificationsGateway.sendNotificationToUser(winnerId, notifWinner);
 
       const notifSeller = await this.notificationsService.create(
-        auction.creator.id,
+        savedAuction.creator.id,
         NotificationType.AUCTION_WON,
-        `Your item "${auction.title}" has sold to a bidder for $${winnerAmount}.`,
-        auction.id,
+        `Your item "${savedAuction.title}" has sold to a bidder for $${winnerAmount}.`,
+        savedAuction.id,
       );
-      this.notificationsGateway.sendNotificationToUser(auction.creator.id, notifSeller);
-    } else if (auction.status === AuctionStatus.CANCELLED) {
+      this.notificationsGateway.sendNotificationToUser(savedAuction.creator.id, notifSeller);
+    } else if (savedAuction.status === AuctionStatus.CANCELLED) {
       const notifSeller = await this.notificationsService.create(
-        auction.creator.id,
+        savedAuction.creator.id,
         NotificationType.AUCTION_ENDING, // Re-using type for ended
-        `Your auction "${auction.title}" ended without a winner.`,
-        auction.id,
+        `Your auction "${savedAuction.title}" ended without a winner.`,
+        savedAuction.id,
       );
-      this.notificationsGateway.sendNotificationToUser(auction.creator.id, notifSeller);
+      this.notificationsGateway.sendNotificationToUser(savedAuction.creator.id, notifSeller);
     }
 
     return savedAuction;

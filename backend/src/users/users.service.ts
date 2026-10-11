@@ -149,6 +149,22 @@ export class UsersService {
     await this.usersRepository.decrement({ id: followerId }, 'followingCount', 1);
     await this.usersRepository.decrement({ id: followingId }, 'followersCount', 1);
 
+    // Guard against negative values
+    await this.usersRepository
+      .createQueryBuilder()
+      .update()
+      .set({ followingCount: () => 'GREATEST("followingCount", 0)' })
+      .where('id = :id', { id: followerId })
+      .execute()
+      .catch(() => null);
+    await this.usersRepository
+      .createQueryBuilder()
+      .update()
+      .set({ followersCount: () => 'GREATEST("followersCount", 0)' })
+      .where('id = :id', { id: followingId })
+      .execute()
+      .catch(() => null);
+
     return { message: 'Unfollowed successfully' };
   }
 

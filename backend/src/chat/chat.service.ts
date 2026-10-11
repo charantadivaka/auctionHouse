@@ -23,8 +23,7 @@ export class ChatService {
     const msg = this.chatRepository.create({
       auction: { id: auctionId } as any,
       sender: { id: senderId } as any,
-      // BUG FIX: Basic HTML escaping to sanitize chat inputs
-      content: content.replace(/</g, '&lt;').replace(/>/g, '&gt;'),
+      content: content.trim(),
     });
     const saved = await this.chatRepository.save(msg);
     const loaded = await this.chatRepository.findOne({

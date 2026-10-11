@@ -62,6 +62,12 @@ export class AuthController {
     return this.authService.verifyOtp(dto.email, dto.otp);
   }
 
+  /** POST /auth/resend-otp — request a new OTP */
+  @Post('resend-otp')
+  resendOtp(@Body() dto: ForgotPasswordDto) {
+    return this.authService.resendOtp(dto.email);
+  }
+
   /** POST /auth/refresh */
   @Post('refresh')
   refresh(@Body() dto: RefreshTokenDto) {

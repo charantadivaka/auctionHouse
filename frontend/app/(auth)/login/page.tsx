@@ -248,10 +248,14 @@ function OtpStep({
   const handleResend = async () => {
     setResending(true);
     setError('');
-    // Resending is not directly supported without the password,
-    // so we inform the user to go back and log in again.
-    setError('To get a new code, please go back and sign in again.');
-    setResending(false);
+    try {
+      await api.post('/auth/resend-otp', { email });
+      setCountdown(RESEND_SECONDS);
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to resend code');
+    } finally {
+      setResending(false);
+    }
   };
 
   return (

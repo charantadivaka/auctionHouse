@@ -208,11 +208,17 @@ function HomeContent() {
       });
     };
 
+    const handleAuctionEnded = (endedAuction: any) => {
+      setAuctions((prev) => prev.filter(a => a.id !== endedAuction.id));
+    };
+
     socket.on('bidPlaced', handleBidPlaced);
+    socket.on('auctionEnded', handleAuctionEnded);
 
     return () => {
       auctionIds.forEach(id => socket.emit('leaveAuction', id));
       socket.off('bidPlaced', handleBidPlaced);
+      socket.off('auctionEnded', handleAuctionEnded);
     };
   }, [auctions.map(a => a.id).join(',')]); // Re-bind only if the visible set of auctions changes
 

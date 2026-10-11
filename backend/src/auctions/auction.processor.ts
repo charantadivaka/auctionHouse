@@ -30,6 +30,12 @@ export class AuctionProcessor extends WorkerHost {
         // FEAT-01: Activate a PENDING auction when its startTime arrives
         this.logger.log(`Activating pending auction ${job.data.auctionId}`);
         await this.auctionsService.activateAuction(job.data.auctionId);
+        const activated = await this.auctionsService.findOneInternal(job.data.auctionId).catch(() => null);
+        if (activated) {
+          this.auctionsGateway.server
+            .to(`auction-${job.data.auctionId}`)
+            .emit('auctionActivated', activated);
+        }
       }
     } catch (error: any) {
       this.logger.error(

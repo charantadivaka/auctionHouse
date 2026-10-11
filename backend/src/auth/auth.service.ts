@@ -201,6 +201,33 @@ export class AuthService {
     };
   }
 
+  async resendOtp(email: string) {
+    const user = await this.usersRepository.findOneBy({ email });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (!user.isActive) {
+      throw new UnauthorizedException('Your account has been suspended');
+    }
+    if (!user.isEmailVerified) {
+      throw new UnauthorizedException('Please verify your email address before logging in');
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpKey = `otp:${user.email}`;
+    const attemptsKey = `otp_attempts:${user.email}`;
+
+    await this.redis.set(otpKey, otp, 'EX', 300); // 5 min TTL
+    await this.redis.set(attemptsKey, '0', 'EX', 300);
+
+    await this.mailService.sendOtp(user.email, otp);
+
+    return {
+      message: 'A new 6-digit verification code has been sent to your email.',
+      email: user.email,
+    };
+  }
+
   async googleLogin(req: any) {
     if (!req.user) {
       throw new UnauthorizedException('No user from google');

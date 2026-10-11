@@ -68,4 +68,8 @@ export class UpdateAuctionDto {
   @IsString()
   @IsOptional()
   shippingInfo?: string;
+
+  @IsString()
+  @IsOptional()
+  videoUrl?: string;
 }
