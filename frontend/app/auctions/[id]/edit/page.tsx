@@ -108,6 +108,9 @@ export default function EditAuction() {
     try {
       await api.patch(`/auctions/${id}`, {
         ...form,
+        categoryId: form.categoryId ? form.categoryId : undefined,
+        location: form.location ? form.location : undefined,
+        shippingInfo: form.shippingInfo ? form.shippingInfo : undefined,
         minBidIncrement: form.minBidIncrement ? Number(form.minBidIncrement) : undefined,
         reservePrice: form.reservePrice ? Number(form.reservePrice) : undefined,
         images: imageUrls.filter(u => u.trim() !== ''),

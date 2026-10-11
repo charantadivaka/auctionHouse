@@ -85,7 +85,7 @@ export class RatingsService {
     return {
       data: ratings.map((r) => ({
         ...r,
-        reviewer: { id: r.reviewer.id, name: r.reviewer.name },
+        reviewer: { id: r.reviewer.id, name: r.reviewer.name, avatarUrl: r.reviewer.avatarUrl },
       })),
       total,
       page,

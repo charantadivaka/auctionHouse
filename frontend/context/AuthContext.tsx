@@ -90,6 +90,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // BUG-11: Use window.location.replace instead of window.location.href for proper redirect
   const logout = () => {
     Cookies.remove('token');
+    Cookies.remove('refreshToken');
     setUser(null);
     setUnreadCount(0);
     socketManager.disconnectAll();

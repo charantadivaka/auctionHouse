@@ -26,6 +26,11 @@ export class ChatService {
       // BUG FIX: Basic HTML escaping to sanitize chat inputs
       content: content.replace(/</g, '&lt;').replace(/>/g, '&gt;'),
     });
-    return this.chatRepository.save(msg);
+    const saved = await this.chatRepository.save(msg);
+    const loaded = await this.chatRepository.findOne({
+      where: { id: saved.id },
+      relations: ['sender'],
+    });
+    return loaded || saved;
   }
 }

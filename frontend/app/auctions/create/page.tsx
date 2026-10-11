@@ -83,6 +83,9 @@ export default function CreateAuction() {
     try {
       const payload: any = {
         ...form,
+        categoryId: form.categoryId ? form.categoryId : undefined,
+        location: form.location ? form.location : undefined,
+        shippingInfo: form.shippingInfo ? form.shippingInfo : undefined,
         auctionType,
         startingPrice: Number(form.startingPrice),
         minBidIncrement: form.minBidIncrement ? Number(form.minBidIncrement) : 1,

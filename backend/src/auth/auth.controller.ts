@@ -103,8 +103,16 @@ export class AuthController {
     const { token, refreshToken } = await this.authService.googleLogin(req);
 
     // BUG FIX: Set tokens as cookies instead of passing in URL params
-    res.cookie('token', token, { httpOnly: false, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' });
-    res.cookie('refreshToken', refreshToken, { httpOnly: false, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' });
+    res.cookie('token', token, {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+    });
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+    });
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     res.redirect(`${frontendUrl}/auth/callback`);

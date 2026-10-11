@@ -79,7 +79,7 @@ export default function Dashboard() {
             />
             <div className="min-w-0">
               <h1 className="text-2xl font-bold text-gray-900 truncate">Welcome back, {user.name.split(' ')[0]}! 👋</h1>
-              <p className="text-gray-500 text-sm mt-0.5">Here's what's happening with your account.</p>
+              <p className="text-gray-500 text-sm mt-0.5">Here&apos;s what&apos;s happening with your account.</p>
             </div>
           </div>
           <Link href="/auctions/create" className="btn-primary text-sm flex-shrink-0">
@@ -109,7 +109,7 @@ export default function Dashboard() {
             {myBids.length === 0 ? (
               <div className="flex flex-col items-center py-12 text-center text-gray-400">
                 <Activity className="w-10 h-10 mb-3 text-gray-200" />
-                <p className="text-sm">You haven't placed any bids yet.</p>
+                <p className="text-sm">You haven&apos;t placed any bids yet.</p>
                 <Link href="/" className="mt-3 text-sm text-indigo-600 font-medium hover:underline">Browse Auctions</Link>
               </div>
             ) : (

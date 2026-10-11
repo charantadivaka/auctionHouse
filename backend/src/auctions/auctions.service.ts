@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, Brackets } from 'typeorm';
 import { Auction, AuctionStatus, AuctionType, PaymentStatus } from './auction.entity';
 import { Bid } from '../bids/bid.entity';
+import { User } from '../users/user.entity';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { CreateAuctionDto } from './dto/create-auction.dto';
@@ -195,13 +196,13 @@ export class AuctionsService {
   // Public fetch — increments viewCount. Use only for user-facing GET requests.
   async findOne(id: string, viewerId?: string): Promise<Auction> {
     const auction = await this.findOneInternal(id);
-    
+
     // Increment view count only if viewer is not the creator
     if (!viewerId || viewerId !== auction.creator.id) {
       await this.auctionsRepository.increment({ id }, 'viewCount', 1);
       auction.viewCount += 1; // reflect in returned object
     }
-    
+
     return auction;
   }
 
@@ -218,13 +219,23 @@ export class AuctionsService {
     }
 
     // BUG FIX: Block changing reservePrice and minBidIncrement if bids exist
-    const bidsCount = await this.dataSource.getRepository(Bid).count({ where: { auction: { id } } });
+    const bidsCount = await this.dataSource
+      .getRepository(Bid)
+      .count({ where: { auction: { id } } });
     if (bidsCount > 0) {
-      if (updateDto.reservePrice !== undefined && Number(updateDto.reservePrice) !== Number(auction.reservePrice)) {
+      if (
+        updateDto.reservePrice !== undefined &&
+        Number(updateDto.reservePrice) !== Number(auction.reservePrice)
+      ) {
         throw new BadRequestException('Cannot change reserve price after bids have been placed');
       }
-      if (updateDto.minBidIncrement !== undefined && Number(updateDto.minBidIncrement) !== Number(auction.minBidIncrement)) {
-        throw new BadRequestException('Cannot change minimum bid increment after bids have been placed');
+      if (
+        updateDto.minBidIncrement !== undefined &&
+        Number(updateDto.minBidIncrement) !== Number(auction.minBidIncrement)
+      ) {
+        throw new BadRequestException(
+          'Cannot change minimum bid increment after bids have been placed',
+        );
       }
     }
 
@@ -261,14 +272,18 @@ export class AuctionsService {
     const saved = await this.auctionsRepository.save(auction);
 
     // BUG FIX: Reschedule BullMQ job if endTime changed
-    if (endTimeChanged && saved.status !== AuctionStatus.CANCELLED && saved.status !== AuctionStatus.SOLD) {
+    if (
+      endTimeChanged &&
+      saved.status !== AuctionStatus.CANCELLED &&
+      saved.status !== AuctionStatus.SOLD
+    ) {
       await this.auctionsQueue.remove(`auction-${id}`).catch(() => null);
       const delay = saved.endTime.getTime() - Date.now();
       if (delay > 0) {
         await this.auctionsQueue.add(
           'endAuction',
           { auctionId: saved.id },
-          { delay, jobId: `auction-${saved.id}` }
+          { delay, jobId: `auction-${saved.id}` },
         );
       } else {
         // If the new end time is already in the past, end it immediately
@@ -424,8 +439,17 @@ export class AuctionsService {
 
     const savedAuction = await this.auctionsRepository.save(auction);
 
-    // Notifications
+    // Notifications & User Sales/Purchases Stats
     if (auction.status === AuctionStatus.SOLD && winnerId) {
+      await this.dataSource
+        .getRepository(User)
+        .increment({ id: auction.creator.id }, 'totalSales', 1)
+        .catch(() => null);
+      await this.dataSource
+        .getRepository(User)
+        .increment({ id: winnerId }, 'totalPurchases', 1)
+        .catch(() => null);
+
       const notifWinner = await this.notificationsService.create(
         winnerId,
         NotificationType.AUCTION_WON,

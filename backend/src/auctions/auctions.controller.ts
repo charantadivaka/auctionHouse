@@ -19,10 +19,14 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { User } from '../users/user.entity';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { OptionalJwtAuthGuard } from '../common/guards/optional-jwt-auth.guard';
+import { AuctionsGateway } from './auctions.gateway';
 
 @Controller('auctions')
 export class AuctionsController {
-  constructor(private readonly auctionsService: AuctionsService) {}
+  constructor(
+    private readonly auctionsService: AuctionsService,
+    private readonly auctionsGateway: AuctionsGateway,
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Post()
@@ -69,7 +73,11 @@ export class AuctionsController {
   @UseGuards(JwtAuthGuard)
   @Post(':id/end')
   async manualEnd(@Param('id') id: string, @CurrentUser() user: User) {
-    return this.auctionsService.manualEndAuction(id, user.id);
+    const endedAuction = await this.auctionsService.manualEndAuction(id, user.id);
+    if (endedAuction) {
+      this.auctionsGateway.server.to(`auction-${id}`).emit('auctionEnded', endedAuction);
+    }
+    return endedAuction;
   }
 
   /** POST /auctions/:id/pay  — winner confirms payment */
