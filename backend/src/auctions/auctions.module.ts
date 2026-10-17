@@ -21,6 +21,6 @@ import { AuctionProcessor } from './auction.processor';
   ],
   providers: [AuctionsService, AuctionsGateway, AuctionProcessor],
   controllers: [AuctionsController],
-  exports: [AuctionsService],
+  exports: [AuctionsService, AuctionsGateway],
 })
 export class AuctionsModule {}

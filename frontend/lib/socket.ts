@@ -22,6 +22,7 @@ class SocketManager {
     if (!this.auctionsSocket) {
       const token = Cookies.get('token');
       this.auctionsSocket = io(SOCKET_URL, {
+        auth: { token: token ? `Bearer ${token}` : '' },
         extraHeaders: {
           Authorization: token ? `Bearer ${token}` : '',
         },
@@ -34,6 +35,7 @@ class SocketManager {
     if (!this.notificationsSocket) {
       const token = Cookies.get('token');
       this.notificationsSocket = io(`${SOCKET_URL}/notifications`, {
+        auth: { token: token ? `Bearer ${token}` : '' },
         extraHeaders: {
           Authorization: token ? `Bearer ${token}` : '',
         },
@@ -46,6 +48,7 @@ class SocketManager {
     if (!this.chatSocket) {
       const token = Cookies.get('token');
       this.chatSocket = io(`${SOCKET_URL}/chat`, {
+        auth: { token: token ? `Bearer ${token}` : '' },
         extraHeaders: {
           Authorization: token ? `Bearer ${token}` : '',
         },
@@ -73,6 +76,7 @@ class SocketManager {
     this.disconnectAll();
     this.getAuctionsSocket();
     this.getNotificationsSocket();
+    this.getChatSocket();
   }
 }
 

@@ -24,9 +24,14 @@ export class NotificationsGateway implements OnGatewayConnection {
 
   async handleConnection(client: Socket) {
     try {
-      const authHeader = client.handshake.headers.authorization;
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.split(' ')[1];
+      const rawToken =
+        client.handshake.auth?.token ||
+        (client.handshake.headers.authorization?.startsWith('Bearer ')
+          ? client.handshake.headers.authorization.split(' ')[1]
+          : client.handshake.headers.authorization);
+
+      if (rawToken) {
+        const token = rawToken.startsWith('Bearer ') ? rawToken.split(' ')[1] : rawToken;
         const payload = this.jwtService.verify(token, {
           secret: this.configService.get('JWT_SECRET'),
         });

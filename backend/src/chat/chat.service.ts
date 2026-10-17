@@ -11,15 +11,21 @@ export class ChatService {
   ) {}
 
   async getMessages(auctionId: string, limit = 50) {
-    return this.chatRepository.find({
+    const messages = await this.chatRepository.find({
       where: { auction: { id: auctionId } },
       relations: ['sender'],
       order: { createdAt: 'ASC' },
       take: limit,
     });
+    return messages.map((m) => ({
+      ...m,
+      sender: m.sender
+        ? { id: m.sender.id, name: m.sender.name, avatarUrl: m.sender.avatarUrl }
+        : null,
+    }));
   }
 
-  async saveMessage(auctionId: string, senderId: string, content: string): Promise<ChatMessage> {
+  async saveMessage(auctionId: string, senderId: string, content: string): Promise<any> {
     const msg = this.chatRepository.create({
       auction: { id: auctionId } as any,
       sender: { id: senderId } as any,
@@ -30,6 +36,16 @@ export class ChatService {
       where: { id: saved.id },
       relations: ['sender'],
     });
-    return loaded || saved;
+    const finalMsg = loaded || saved;
+    return {
+      ...finalMsg,
+      sender: finalMsg.sender
+        ? {
+            id: finalMsg.sender.id,
+            name: finalMsg.sender.name,
+            avatarUrl: finalMsg.sender.avatarUrl,
+          }
+        : null,
+    };
   }
 }

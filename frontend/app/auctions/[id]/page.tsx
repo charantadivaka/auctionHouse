@@ -217,7 +217,6 @@ export default function AuctionDetails() {
       setAuction(a); 
       setError(''); 
       setBidLoading(false); 
-      setBidAmount(''); // Reset input on successful bid
       // Reset bids page to 1 on new bid to show latest
       api.get(`/bids/auction/${id}?page=1&limit=20`).then(r => {
         setBids(r.data.data || []);
@@ -227,6 +226,7 @@ export default function AuctionDetails() {
     };
     const onEnded = (a: any) => { 
       setAuction(a); 
+      setBidLoading(false);
       api.get(`/bids/auction/${id}?page=1&limit=20`).then(r => {
         setBids(r.data.data || []);
         setTotalBids(r.data.total || 0);
@@ -252,12 +252,38 @@ export default function AuctionDetails() {
     };
   }, [id]);
 
-  const handlePlaceBid = (e: React.FormEvent) => {
+  const handlePlaceBid = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) { router.push('/login'); return; }
+    const amountNum = Number(bidAmount);
+    if (!amountNum || isNaN(amountNum) || amountNum <= 0) {
+      setError('Please enter a valid bid amount.');
+      return;
+    }
     setError('');
     setBidLoading(true);
-    socketManager.getAuctionsSocket().emit('placeBid', { auctionId: id, amount: Number(bidAmount) });
+
+    const socket = socketManager.getAuctionsSocket();
+    if (socket?.connected) {
+      socket.emit('placeBid', { auctionId: id, amount: amountNum });
+      setBidAmount('');
+    } else {
+      // REST fallback when WebSocket is disconnected or blocked
+      try {
+        const res = await api.post(`/auctions/${id}/bid`, { amount: amountNum });
+        setAuction(res.data);
+        setBidAmount('');
+        api.get(`/bids/auction/${id}?page=1&limit=20`).then(r => {
+          setBids(r.data.data || []);
+          setTotalBids(r.data.total || 0);
+          setBidsPage(1);
+        });
+      } catch (err: any) {
+        setError(err.response?.data?.message || 'Failed to place bid');
+      } finally {
+        setBidLoading(false);
+      }
+    }
   };
 
   const loadMoreBids = async () => {

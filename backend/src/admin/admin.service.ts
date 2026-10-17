@@ -8,6 +8,7 @@ import { Auction, AuctionStatus } from '../auctions/auction.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { NotificationType } from '../notifications/notification.entity';
+import { AuctionsGateway } from '../auctions/auctions.gateway';
 
 @Injectable()
 export class AdminService {
@@ -20,6 +21,7 @@ export class AdminService {
     @InjectQueue('auctions') private auctionsQueue: Queue,
     private notificationsService: NotificationsService,
     private notificationsGateway: NotificationsGateway,
+    private auctionsGateway: AuctionsGateway,
   ) {}
 
   async getStats() {
@@ -104,6 +106,13 @@ export class AdminService {
 
     auction.status = AuctionStatus.CANCELLED;
     const saved = await this.auctionsRepository.save(auction);
+
+    // Notify connected clients via WebSocket
+    if (this.auctionsGateway?.server) {
+      this.auctionsGateway.server
+        .to(`auction-${auctionId}`)
+        .emit('auctionEnded', saved);
+    }
 
     if (saved.creator?.id) {
       try {

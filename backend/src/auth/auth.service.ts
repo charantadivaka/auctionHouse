@@ -98,8 +98,37 @@ export class AuthService {
     };
   }
 
+  private async findUserWithSelect(
+    criteria: { email?: string; id?: string },
+    selectFields: string[],
+  ): Promise<User | null> {
+    try {
+      if (typeof this.usersRepository.createQueryBuilder === 'function') {
+        const qb = this.usersRepository.createQueryBuilder('user');
+        for (const field of selectFields) {
+          qb.addSelect(`user.${field}`);
+        }
+        if (criteria.email) {
+          qb.where('user.email = :email', { email: criteria.email });
+        } else if (criteria.id) {
+          qb.where('user.id = :id', { id: criteria.id });
+        }
+        const user = await qb.getOne();
+        if (user) return user;
+      }
+    } catch {
+      // Fallback for mock environments
+    }
+    return criteria.email
+      ? this.usersRepository.findOneBy({ email: criteria.email })
+      : this.usersRepository.findOneBy({ id: criteria.id! });
+  }
+
   async verifyEmail(email: string, token: string) {
-    const user = await this.usersRepository.findOneBy({ email });
+    const user = await this.findUserWithSelect(
+      { email },
+      ['emailVerificationToken', 'emailVerificationExpires'],
+    );
     if (!user || !user.emailVerificationToken || !user.emailVerificationExpires) {
       throw new BadRequestException('Invalid or expired verification link');
     }
@@ -124,7 +153,7 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const user = await this.usersRepository.findOneBy({ email: dto.email });
+    const user = await this.findUserWithSelect({ email: dto.email }, ['password']);
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -270,7 +299,7 @@ export class AuthService {
           this.configService.get<string>('JWT_REFRESH_SECRET') ||
           this.configService.get<string>('JWT_SECRET'),
       });
-      const user = await this.usersRepository.findOneBy({ id: payload.sub });
+      const user = await this.findUserWithSelect({ id: payload.sub }, ['refreshToken']);
       if (!user || !user.refreshToken) throw new UnauthorizedException();
 
       const isMatch = await bcrypt.compare(refreshToken, user.refreshToken);
@@ -312,7 +341,10 @@ export class AuthService {
   }
 
   async resetPassword(email: string, token: string, newPassword: string) {
-    const user = await this.usersRepository.findOneBy({ email });
+    const user = await this.findUserWithSelect(
+      { email },
+      ['resetPasswordToken', 'resetPasswordExpires'],
+    );
     if (!user || !user.resetPasswordToken || !user.resetPasswordExpires) {
       throw new BadRequestException('Invalid or expired reset token');
     }

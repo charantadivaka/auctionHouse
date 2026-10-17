@@ -20,7 +20,12 @@ export class BidsService {
     });
 
     return {
-      data: bids,
+      data: bids.map((b) => ({
+        ...b,
+        bidder: b.bidder
+          ? { id: b.bidder.id, name: b.bidder.name, avatarUrl: b.bidder.avatarUrl }
+          : null,
+      })),
       total,
       page,
       limit,

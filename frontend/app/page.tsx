@@ -177,6 +177,8 @@ function HomeContent() {
   useEffect(() => { fetchAuctions(); }, [page, search, sort, auctionType, selectedCategory]);
 
   // Real-time WebSockets updates
+  const visibleAuctionIds = auctions.map(a => a.id).join(',');
+
   useEffect(() => {
     if (typeof window === 'undefined' || auctions.length === 0) return;
 
@@ -220,7 +222,7 @@ function HomeContent() {
       socket.off('bidPlaced', handleBidPlaced);
       socket.off('auctionEnded', handleAuctionEnded);
     };
-  }, [auctions.map(a => a.id).join(',')]); // Re-bind only if the visible set of auctions changes
+  }, [visibleAuctionIds]); // Re-bind only if the visible set of auctions changes
 
   return (
     <div className="min-h-screen bg-gray-50">

@@ -21,6 +21,7 @@ import { AuctionsService } from './auctions.service';
 import { CreateAuctionDto } from './dto/create-auction.dto';
 import { UpdateAuctionDto } from './dto/update-auction.dto';
 import { QueryAuctionDto } from './dto/query-auction.dto';
+import { PlaceBidDto } from './dto/place-bid.dto';
 import { Auction } from './auction.entity';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -74,6 +75,28 @@ export class AuctionsController {
   @Get(':id')
   async findOne(@Param('id') id: string, @CurrentUser() user: User | null): Promise<Auction> {
     return this.auctionsService.findOne(id, user?.id);
+  }
+
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Place a bid on an active auction',
+    description: 'Places a bid via REST. Emits real-time WebSocket event to all room participants.',
+  })
+  @ApiParam({ name: 'id', description: 'Auction UUID' })
+  @ApiResponse({ status: 200, description: 'Bid placed successfully.' })
+  @ApiResponse({ status: 400, description: 'Invalid bid amount or auction not active.' })
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/bid')
+  async placeBid(
+    @Param('id') id: string,
+    @Body() dto: PlaceBidDto,
+    @CurrentUser() user: User,
+  ) {
+    const updatedAuction = await this.auctionsService.placeBid(id, user.id, dto.amount);
+    if (this.auctionsGateway?.server) {
+      this.auctionsGateway.server.to(`auction-${id}`).emit('bidPlaced', updatedAuction);
+    }
+    return updatedAuction;
   }
 
   @ApiBearerAuth('JWT')

@@ -64,6 +64,9 @@ export class UsersController {
       refreshToken: _rt,
       resetPasswordToken: _rpt,
       resetPasswordExpires: _rpe,
+      emailVerificationToken: _evt,
+      emailVerificationExpires: _eve,
+      phone: _phone,
       ...rest
     } = user as any;
     return rest;

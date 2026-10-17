@@ -6,11 +6,14 @@ import { Auction } from '../auctions/auction.entity';
 import { AdminService } from './admin.service';
 import { AdminController } from './admin.controller';
 
+import { AuctionsModule } from '../auctions/auctions.module';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, Auction]),
     // BUG-07: Import the auctions queue so AdminService can remove jobs on cancel
     BullModule.registerQueue({ name: 'auctions' }),
+    AuctionsModule,
   ],
   providers: [AdminService],
   controllers: [AdminController],

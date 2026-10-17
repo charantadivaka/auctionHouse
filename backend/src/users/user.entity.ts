@@ -28,7 +28,7 @@ export class User {
   @Column({ unique: true })
   email: string;
 
-  @Column()
+  @Column({ select: false })
   password: string;
 
   @Column({ type: 'enum', enum: UserRole, default: UserRole.USER })
@@ -52,19 +52,19 @@ export class User {
   @Column({ nullable: true })
   phone: string;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ type: 'varchar', nullable: true, select: false })
   resetPasswordToken: string | null;
 
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: 'timestamptz', nullable: true, select: false })
   resetPasswordExpires: Date | null;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ type: 'varchar', nullable: true, select: false })
   emailVerificationToken: string | null;
 
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: 'timestamptz', nullable: true, select: false })
   emailVerificationExpires: Date | null;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ type: 'varchar', nullable: true, select: false })
   refreshToken: string | null;
 
   @Column({ default: 0 })

@@ -118,7 +118,13 @@ export class AuctionsService {
     }
 
     if (seller) {
-      qb.andWhere('creator.name ILIKE :seller', { seller: `%${seller}%` });
+      const isUuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(seller);
+      if (isUuid) {
+        qb.andWhere('creator.id = :seller', { seller });
+      } else {
+        qb.andWhere('creator.name ILIKE :seller', { seller: `%${seller}%` });
+      }
     }
 
     if (category) {
@@ -157,6 +163,12 @@ export class AuctionsService {
           activeStatus: AuctionStatus.ACTIVE,
         });
         break;
+      case 'most_bids':
+        qb.orderBy(
+          '(SELECT COUNT(*) FROM bids WHERE bids."auctionId" = auction.id)',
+          'DESC',
+        );
+        break;
       case 'most_viewed':
         qb.orderBy('auction.viewCount', 'DESC');
         break;
@@ -171,6 +183,22 @@ export class AuctionsService {
     qb.skip((pageNumber - 1) * limitNumber).take(limitNumber);
 
     const [items, total] = await qb.getManyAndCount();
+
+    for (const item of items) {
+      if (item.creator) {
+        const {
+          password: _pw,
+          refreshToken: _rt,
+          resetPasswordToken: _rpt,
+          resetPasswordExpires: _rpe,
+          emailVerificationToken: _evt,
+          emailVerificationExpires: _eve,
+          phone: _ph,
+          ...safeCreator
+        } = item.creator as any;
+        item.creator = safeCreator;
+      }
+    }
 
     return {
       data: items,
@@ -189,6 +217,18 @@ export class AuctionsService {
     });
     if (!auction) {
       throw new NotFoundException(`Auction with id "${id}" not found`);
+    }
+    if (auction.creator) {
+      const {
+        password: _pw,
+        refreshToken: _rt,
+        resetPasswordToken: _rpt,
+        resetPasswordExpires: _rpe,
+        emailVerificationToken: _evt,
+        emailVerificationExpires: _eve,
+        ...safeCreator
+      } = auction.creator as any;
+      auction.creator = safeCreator;
     }
     return auction;
   }
@@ -240,10 +280,23 @@ export class AuctionsService {
     }
 
     let endTimeChanged = false;
+    let validatedEndTime: Date | undefined;
+
     if (updateDto.endTime) {
       const newEndTime = new Date(updateDto.endTime);
-      if (newEndTime.getTime() !== auction.endTime.getTime()) {
+      if (isNaN(newEndTime.getTime())) {
+        throw new BadRequestException('Invalid endTime date format');
+      }
+      const startTimeDate = new Date(auction.startTime);
+      if (newEndTime <= startTimeDate) {
+        throw new BadRequestException('End time must be after start time');
+      }
+      if (bidsCount > 0 && newEndTime.getTime() < Date.now()) {
+        throw new BadRequestException('Cannot set end time to the past when bids already exist');
+      }
+      if (newEndTime.getTime() !== new Date(auction.endTime).getTime()) {
         endTimeChanged = true;
+        validatedEndTime = newEndTime;
       }
     }
 
@@ -255,7 +308,6 @@ export class AuctionsService {
       'condition',
       'minBidIncrement',
       'reservePrice',
-      'endTime',
       'location',
       'shippingInfo',
       'videoUrl',
@@ -264,6 +316,9 @@ export class AuctionsService {
       if (updateDto[field] !== undefined) {
         (auction as any)[field] = updateDto[field];
       }
+    }
+    if (validatedEndTime) {
+      auction.endTime = validatedEndTime;
     }
 
     if (updateDto.categoryId) {
@@ -279,7 +334,7 @@ export class AuctionsService {
       saved.status !== AuctionStatus.SOLD
     ) {
       await this.auctionsQueue.remove(`auction-${id}`).catch(() => null);
-      const delay = saved.endTime.getTime() - Date.now();
+      const delay = new Date(saved.endTime).getTime() - Date.now();
       if (delay > 0) {
         await this.auctionsQueue.add(
           'endAuction',
@@ -323,6 +378,10 @@ export class AuctionsService {
   }
 
   async placeBid(auctionId: string, bidderId: string, amount: number): Promise<Auction> {
+    if (typeof amount !== 'number' || isNaN(amount) || !isFinite(amount) || amount <= 0) {
+      throw new BadRequestException('A valid positive numeric bid amount is required');
+    }
+
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();

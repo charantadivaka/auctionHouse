@@ -43,7 +43,7 @@ export default function NotificationsPage() {
       }
     };
     fetch();
-  }, [user]);
+  }, [user, clearUnread]);
 
   const markAllRead = async () => {
     try {
